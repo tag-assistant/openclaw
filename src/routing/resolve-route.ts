@@ -1,6 +1,7 @@
 import type { ChatType } from "../channels/chat-type.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { normalizeChatType } from "../channels/chat-type.js";
 import { listBindings } from "./bindings.js";
 import {
   buildAgentMainSessionKey,
@@ -139,7 +140,8 @@ function matchesPeer(
   if (!m) {
     return false;
   }
-  const kind = normalizeToken(m.kind);
+  // Backward compat: normalize "dm" to "direct" in config match rules
+  const kind = normalizeChatType(m.kind);
   const id = normalizeId(m.id);
   if (!kind || !id) {
     return false;

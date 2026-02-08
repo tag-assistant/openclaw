@@ -409,3 +409,29 @@ describe("parentPeer binding inheritance (thread support)", () => {
     expect(route.matchedBy).toBe("default");
   });
 });
+
+describe("backward compatibility: peer.kind dm → direct", () => {
+  test("legacy dm in config matches runtime direct peer", () => {
+    const cfg: OpenClawConfig = {
+      bindings: [
+        {
+          agentId: "alex",
+          match: {
+            channel: "whatsapp",
+            // Legacy config uses "dm" instead of "direct"
+            peer: { kind: "dm", id: "+15551234567" },
+          },
+        },
+      ],
+    };
+    const route = resolveAgentRoute({
+      cfg,
+      channel: "whatsapp",
+      accountId: null,
+      // Runtime uses canonical "direct"
+      peer: { kind: "direct", id: "+15551234567" },
+    });
+    expect(route.agentId).toBe("alex");
+    expect(route.matchedBy).toBe("binding.peer");
+  });
+});
