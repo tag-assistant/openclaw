@@ -14,6 +14,7 @@ type AnthropicAuthDefaultsMode = "api_key" | "oauth";
 const DEFAULT_MODEL_ALIASES: Readonly<Record<string, string>> = {
   // Anthropic (pi-ai catalog uses "latest" ids without date suffix)
   opus: "anthropic/claude-opus-4-6",
+  "opus-fast": "anthropic/claude-opus-4-6-fast",
   sonnet: "anthropic/claude-sonnet-4-5",
 
   // OpenAI

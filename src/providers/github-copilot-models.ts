@@ -14,6 +14,9 @@ const DEFAULT_MODEL_IDS = [
   "o1",
   "o1-mini",
   "o3-mini",
+  "claude-opus-4-6",
+  "claude-opus-4-6-fast",
+  "claude-sonnet-4-5",
 ] as const;
 
 export function getDefaultCopilotModelIds(): string[] {
