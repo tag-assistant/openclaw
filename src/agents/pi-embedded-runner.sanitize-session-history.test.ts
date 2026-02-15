@@ -431,4 +431,27 @@ describe("sanitizeSessionHistory", () => {
     // Same model — thinking blocks should be preserved as-is.
     expect(result).toEqual(messages);
   });
+
+  it("downgrades signed thinking blocks in legacy sessions without model snapshots", async () => {
+    // Legacy sessions predate model snapshot tracking — no snapshot entries exist.
+    // Signed thinking blocks from a previous provider should still be downgraded.
+    const sessionManager = makeInMemorySessionManager([]);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "base64" });
+
+    const result = await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-completions",
+      provider: "github-copilot",
+      modelId: "claude-opus-4-6",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    // No prior snapshot + messages exist → treat as potential provider mismatch.
+    expect(result).toHaveLength(1);
+    const content = (result[0] as { content: unknown[] }).content;
+    expect(content).toHaveLength(1);
+    expect((content[0] as { type: string }).type).toBe("text");
+    expect((content[0] as { text: string }).text).toBe("reasoning");
+  });
 });
