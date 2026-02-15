@@ -361,6 +361,17 @@ function isSameModelSnapshot(a: ModelSnapshotEntry, b: ModelSnapshotEntry): bool
   );
 }
 
+// Thinking signatures are provider-level (e.g. Anthropic base64, OpenAI JSON reasoning)
+// and remain valid when switching models within the same provider/API combination.
+// Only cross-provider switches produce incompatible signatures.
+function isSignatureCompatibleSnapshot(a: ModelSnapshotEntry, b: ModelSnapshotEntry): boolean {
+  const normalize = (value?: string | null) => value ?? "";
+  return (
+    normalize(a.provider) === normalize(b.provider) &&
+    normalize(a.modelApi) === normalize(b.modelApi)
+  );
+}
+
 function hasGoogleTurnOrderingMarker(sessionManager: SessionManager): boolean {
   try {
     return sessionManager
@@ -456,27 +467,29 @@ export async function sanitizeSessionHistory(params: {
     params.modelApi === "openai-responses" || params.modelApi === "openai-codex-responses";
   const hasSnapshot = Boolean(params.provider || params.modelApi || params.modelId);
   const priorSnapshot = hasSnapshot ? readLastModelSnapshot(params.sessionManager) : null;
-  const modelChanged = priorSnapshot
-    ? !isSameModelSnapshot(priorSnapshot, {
-        timestamp: 0,
-        provider: params.provider,
-        modelApi: params.modelApi,
-        modelId: params.modelId,
-      })
+  const currentSnapshot: ModelSnapshotEntry = {
+    timestamp: 0,
+    provider: params.provider,
+    modelApi: params.modelApi,
+    modelId: params.modelId,
+  };
+  const modelChanged = priorSnapshot ? !isSameModelSnapshot(priorSnapshot, currentSnapshot) : false;
+  // Thinking signatures are provider-level (Anthropic base64, OpenAI reasoning JSON) and
+  // remain valid across model switches within the same provider+API. Only cross-provider
+  // switches produce incompatible signatures (e.g. OpenAI reasoning JSON sent via Copilot
+  // to Claude → "Invalid signature in thinking block" HTTP 400).
+  const signatureIncompatible = priorSnapshot
+    ? !isSignatureCompatibleSnapshot(priorSnapshot, currentSnapshot)
     : false;
-  // When the model/provider changes, thinking signatures from the previous provider are
-  // not valid for the new one (e.g. OpenAI reasoning JSON sent via Copilot to Claude →
-  // "Invalid signature in thinking block" HTTP 400). Convert signed thinking blocks to
-  // text so reasoning context is preserved without cross-provider signature poisoning.
   // Also downgrade when there's no prior snapshot but the session already has messages
   // (legacy sessions that predate model snapshot tracking may have toxic signatures).
   const needsThinkingDowngrade =
-    modelChanged || (hasSnapshot && !priorSnapshot && sanitizedToolResults.length > 0);
+    signatureIncompatible || (hasSnapshot && !priorSnapshot && sanitizedToolResults.length > 0);
   const sanitizedModelSwitch = needsThinkingDowngrade
     ? downgradeThinkingBlocksOnModelSwitch(sanitizedToolResults)
     : sanitizedToolResults;
   const sanitizedOpenAI =
-    isOpenAIResponsesApi && modelChanged
+    isOpenAIResponsesApi && signatureIncompatible
       ? downgradeOpenAIReasoningBlocks(sanitizedModelSwitch)
       : sanitizedModelSwitch;
 

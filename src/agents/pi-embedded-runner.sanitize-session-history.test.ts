@@ -432,6 +432,31 @@ describe("sanitizeSessionHistory", () => {
     expect(result).toEqual(messages);
   });
 
+  it("preserves thinking signatures when switching models within the same provider", async () => {
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "github-copilot",
+        modelApi: "openai-completions",
+        modelId: "claude-opus-4-6",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "base64" });
+
+    const result = await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-completions",
+      provider: "github-copilot",
+      modelId: "claude-sonnet-4-5",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    // Different model but same provider+API — thinking signatures are provider-level
+    // and should be preserved. Opus → Sonnet on github-copilot should NOT strip sigs.
+    expect(result).toEqual(messages);
+  });
+
   it("downgrades signed thinking blocks in legacy sessions without model snapshots", async () => {
     // Legacy sessions predate model snapshot tracking — no snapshot entries exist.
     // Signed thinking blocks from a previous provider should still be downgraded.
