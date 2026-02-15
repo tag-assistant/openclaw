@@ -6,6 +6,7 @@ import { applyAuthProfileConfig } from "../commands/onboard-auth.js";
 import { logConfigUpdated } from "../config/logging.js";
 import { stylePromptTitle } from "../terminal/prompt-style.js";
 import { getCopilotSdkAuthStatus, isCopilotSdkAvailable } from "./github-copilot-sdk.js";
+import { SDK_MANAGED_TOKEN } from "./github-copilot-token.js";
 
 const CLIENT_ID = "Iv1.b507a08c87ecfe98";
 const DEVICE_CODE_URL = "https://github.com/login/device/code";
@@ -151,7 +152,7 @@ export async function githubCopilotLoginCommand(
         credential: {
           type: "token",
           provider: "github-copilot",
-          token: "sdk-managed",
+          token: SDK_MANAGED_TOKEN,
         },
       });
 
