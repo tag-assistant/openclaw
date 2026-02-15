@@ -479,4 +479,164 @@ describe("sanitizeSessionHistory", () => {
     expect((content[0] as { type: string }).type).toBe("text");
     expect((content[0] as { text: string }).text).toBe("reasoning");
   });
+
+  // -- Signature preservation matrix --
+  // These tests prove that model switches within the same provider preserve thinking
+  // quality, while cross-provider switches correctly strip incompatible signatures.
+
+  it("preserves base64 sigs: opus-4-6 → opus-4-6-fast on same provider (model upgrade)", async () => {
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "github-copilot",
+        modelApi: "openai-completions",
+        modelId: "claude-opus-4-6",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "base64" });
+
+    const result = await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-completions",
+      provider: "github-copilot",
+      modelId: "claude-opus-4-6-fast",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    // Same provider — base64 signatures stay valid.
+    expect(result).toEqual(messages);
+  });
+
+  it("preserves JSON sigs: gpt-5.2 → o3-pro on same openai provider", async () => {
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "openai",
+        modelApi: "openai-responses",
+        modelId: "gpt-5.2",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "json" });
+
+    const result = await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-responses",
+      provider: "openai",
+      modelId: "o3-pro",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    // Same provider + API — OpenAI reasoning JSON stays valid.
+    expect(result).toEqual(messages);
+  });
+
+  it("downgrades sigs when same modelApi but different provider", async () => {
+    // Both use openai-completions but different providers — signatures are not portable.
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "openai",
+        modelApi: "openai-completions",
+        modelId: "gpt-5.2",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "json" });
+
+    const result = await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-completions",
+      provider: "azure-foundry",
+      modelId: "gpt-5.2",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    // Different provider — even with same model and API, signatures are downgraded.
+    expect(result).toHaveLength(1);
+    const content = (result[0] as { content: unknown[] }).content;
+    expect(content).toHaveLength(1);
+    expect((content[0] as { type: string }).type).toBe("text");
+  });
+
+  it("downgrades sigs when provider changes but modelId stays the same", async () => {
+    // Same model name on two different providers — signatures not compatible.
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "anthropic",
+        modelApi: "anthropic-messages",
+        modelId: "claude-opus-4-6",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "base64" });
+
+    const result = await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-completions",
+      provider: "github-copilot",
+      modelId: "claude-opus-4-6",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    // Same model name but different provider+API — must downgrade.
+    expect(result).toHaveLength(1);
+    const content = (result[0] as { content: unknown[] }).content;
+    expect(content).toHaveLength(1);
+    expect((content[0] as { type: string }).type).toBe("text");
+  });
+
+  it("writes a new snapshot on model switch within same provider", async () => {
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "github-copilot",
+        modelApi: "openai-completions",
+        modelId: "claude-opus-4-6",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "base64" });
+
+    await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-completions",
+      provider: "github-copilot",
+      modelId: "claude-sonnet-4-5",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    // Even though signatures were preserved, the snapshot should update to track the new model.
+    const snapshots = sessionEntries.filter((e) => e.customType === "model-snapshot");
+    expect(snapshots).toHaveLength(2);
+    const latest = snapshots[1].data as { modelId: string };
+    expect(latest.modelId).toBe("claude-sonnet-4-5");
+  });
+
+  it("does not write a duplicate snapshot when model is identical", async () => {
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "github-copilot",
+        modelApi: "openai-completions",
+        modelId: "claude-opus-4-6",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "base64" });
+
+    await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-completions",
+      provider: "github-copilot",
+      modelId: "claude-opus-4-6",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    // Same exact model — no new snapshot written.
+    const snapshots = sessionEntries.filter((e) => e.customType === "model-snapshot");
+    expect(snapshots).toHaveLength(1);
+  });
 });
