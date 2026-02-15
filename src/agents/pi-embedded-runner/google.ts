@@ -468,7 +468,11 @@ export async function sanitizeSessionHistory(params: {
   // not valid for the new one (e.g. OpenAI reasoning JSON sent via Copilot to Claude →
   // "Invalid signature in thinking block" HTTP 400). Convert signed thinking blocks to
   // text so reasoning context is preserved without cross-provider signature poisoning.
-  const sanitizedModelSwitch = modelChanged
+  // Also downgrade when there's no prior snapshot but the session already has messages
+  // (legacy sessions that predate model snapshot tracking may have toxic signatures).
+  const needsThinkingDowngrade =
+    modelChanged || (hasSnapshot && !priorSnapshot && sanitizedToolResults.length > 0);
+  const sanitizedModelSwitch = needsThinkingDowngrade
     ? downgradeThinkingBlocksOnModelSwitch(sanitizedToolResults)
     : sanitizedToolResults;
   const sanitizedOpenAI =
