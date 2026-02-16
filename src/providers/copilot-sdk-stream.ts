@@ -7,6 +7,11 @@
  * The CLI handles rate-limit retries (jittered backoff, `retry-after` header
  * parsing) at the HTTP transport layer — something the higher-level SDKs
  * can't do.
+ *
+ * Additionally we use the SDK's onErrorOccurred hook to request automatic
+ * retries for rate-limit and transient model_call errors, and the
+ * session.error statusCode to surface structured failure reasons back to
+ * OpenClaw's failover system.
  */
 
 import type {
@@ -37,16 +42,28 @@ const { AssistantMessageEventStream: EventStreamClass } =
 
 let sharedClient: CopilotClient | null = null;
 let clientRefCount = 0;
+let clientInitToken: string | undefined;
 
 function getOrCreateClient(githubToken?: string): CopilotClient {
+  // If token changed, tear down old client.
+  if (sharedClient && clientInitToken !== githubToken) {
+    const oldClient = sharedClient;
+    sharedClient = null;
+    clientRefCount = 0;
+    oldClient.stop().catch(() => {});
+  }
+
   if (!sharedClient) {
+    const isDebug =
+      process.env.OPENCLAW_LOG_LEVEL === "debug" || process.env.DEBUG?.includes("copilot");
     sharedClient = new CopilotClient({
       useStdio: true,
       autoStart: true,
       autoRestart: true,
-      logLevel: "warning",
+      logLevel: isDebug ? "debug" : "warning",
       ...(githubToken ? { githubToken, useLoggedInUser: false } : { useLoggedInUser: true }),
     });
+    clientInitToken = githubToken;
   }
   clientRefCount++;
   return sharedClient;
@@ -61,6 +78,7 @@ export function releaseClient(): void {
   if (clientRefCount === 0 && sharedClient) {
     const c = sharedClient;
     sharedClient = null;
+    clientInitToken = undefined;
     c.stop().catch(() => {});
   }
 }
@@ -114,6 +132,33 @@ function createEmptyOutput(model: Model<Api>): AssistantMessage {
 }
 
 // ---------------------------------------------------------------------------
+// Rate-limit / error classification helpers
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT_PATTERNS = /rate.?limit|too many requests|quota|throttl|429|resource.?exhausted/i;
+const TRANSIENT_PATTERNS =
+  /timeout|timed.?out|overloaded|service.?unavailable|502|503|504|econnreset|epipe|socket hang up/i;
+
+function isRateLimitError(message: string): boolean {
+  return RATE_LIMIT_PATTERNS.test(message);
+}
+
+function isTransientError(message: string): boolean {
+  return TRANSIENT_PATTERNS.test(message);
+}
+
+/**
+ * Build a structured error message that OpenClaw's failover classifier can
+ * parse. Includes the HTTP status code when the SDK provides one.
+ */
+function buildErrorMessage(message: string, statusCode?: number): string {
+  if (statusCode) {
+    return `${statusCode} ${message}`;
+  }
+  return message;
+}
+
+// ---------------------------------------------------------------------------
 // The stream function
 // ---------------------------------------------------------------------------
 
@@ -155,6 +200,32 @@ export function createCopilotSdkStreamFn(githubToken?: string): StreamFunction {
           infiniteSessions: { enabled: false },
           // Disable built-in tools — OpenClaw provides its own.
           availableTools: [],
+          // Permission handler — auto-approve everything (OpenClaw manages permissions).
+          onPermissionRequest: async () => ({ kind: "approved" as const }),
+          // Hook: automatic retry for rate-limit and transient model errors.
+          // The SDK's CLI binary already retries at the HTTP layer, but this
+          // catches higher-level errors that escape the transport retry loop.
+          hooks: {
+            onErrorOccurred: async (input) => {
+              if (input.errorContext === "model_call") {
+                if (isRateLimitError(input.error)) {
+                  return {
+                    errorHandling: "retry" as const,
+                    retryCount: 3,
+                    userNotification: "Rate limit hit — retrying...",
+                  };
+                }
+                if (isTransientError(input.error) && input.recoverable) {
+                  return {
+                    errorHandling: "retry" as const,
+                    retryCount: 2,
+                    userNotification: "Transient error — retrying...",
+                  };
+                }
+              }
+              return undefined;
+            },
+          },
         });
 
         const prompt = contextToPrompt(context);
@@ -318,8 +389,11 @@ export function createCopilotSdkStreamFn(githubToken?: string): StreamFunction {
             }
 
             case "session.error": {
+              // Build an error message that includes the status code so
+              // OpenClaw's classifyFailoverReason picks it up correctly
+              // (e.g. "429 rate limit exceeded" → rate_limit).
               output.stopReason = "error";
-              output.errorMessage = event.data.message;
+              output.errorMessage = buildErrorMessage(event.data.message, event.data.statusCode);
               stream.push({ type: "error", reason: "error", error: output });
               stream.end();
               break;
