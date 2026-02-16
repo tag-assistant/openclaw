@@ -2,7 +2,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import type { FailoverReason } from "./pi-embedded-helpers.js";
 import {
   ensureAuthProfileStore,
-  isProfileInCooldown,
+  isProfileInCooldownForModel,
   resolveAuthProfileOrder,
 } from "./auth-profiles.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
@@ -247,7 +247,11 @@ export async function runWithModelFallback<T>(params: {
         store: authStore,
         provider: candidate.provider,
       });
-      const isAnyProfileAvailable = profileIds.some((id) => !isProfileInCooldown(authStore, id));
+      // Model-aware cooldown: per-model cooldowns (rate_limit, timeout)
+      // only block the specific model, not the entire provider.
+      const isAnyProfileAvailable = profileIds.some(
+        (id) => !isProfileInCooldownForModel(authStore, id, candidate.model),
+      );
 
       if (profileIds.length > 0 && !isAnyProfileAvailable) {
         // All profiles for this provider are in cooldown; skip without attempting
