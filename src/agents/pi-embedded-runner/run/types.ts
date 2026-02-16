@@ -19,6 +19,8 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   authStorage: AuthStorage;
   modelRegistry: ModelRegistry;
   thinkLevel: ThinkLevel;
+  /** Raw GitHub token for Copilot SDK auth (not the exchanged API token). */
+  copilotGitHubToken?: string;
 };
 
 export type EmbeddedRunAttemptResult = {
