@@ -95,9 +95,14 @@ describe("markAuthProfileFailure with modelId", () => {
       const stats = store.usageStats?.["copilot:default"];
       // Profile-level cooldown should NOT be set.
       expect(stats?.cooldownUntil).toBeUndefined();
-      // Per-model cooldown SHOULD be set.
-      expect(stats?.modelCooldowns?.["claude-opus-4.6-1m"]).toBeTypeOf("number");
-      expect(stats!.modelCooldowns!["claude-opus-4.6-1m"]).toBeGreaterThan(Date.now());
+      // Per-model cooldown SHOULD be set — short 15s duration.
+      const cooldownUntil = stats?.modelCooldowns?.["claude-opus-4.6-1m"];
+      expect(cooldownUntil).toBeTypeOf("number");
+      expect(cooldownUntil).toBeGreaterThan(Date.now());
+      // Should be ~15s, not the old 60s+ exponential.
+      const remainingMs = cooldownUntil! - Date.now();
+      expect(remainingMs).toBeLessThanOrEqual(15_000);
+      expect(remainingMs).toBeGreaterThan(10_000);
 
       // Other model is not in cooldown.
       expect(isProfileInCooldownForModel(store, "copilot:default", "gpt-5.3")).toBe(false);
