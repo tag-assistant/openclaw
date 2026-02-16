@@ -21,8 +21,6 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   thinkLevel: ThinkLevel;
   /** Pre-computed hook result from run.ts to avoid double-firing before_agent_start. */
   earlyHookResult?: PluginHookBeforeAgentStartResult;
-  /** Raw GitHub token for Copilot SDK auth (not the exchanged API token). */
-  copilotGitHubToken?: string;
 };
 
 export type EmbeddedRunAttemptResult = {
