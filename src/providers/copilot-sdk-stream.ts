@@ -101,7 +101,8 @@ export function releaseClient(): void {
 // System prompt + message conversion
 // ---------------------------------------------------------------------------
 
-function contextToPrompt(context: Context): string {
+/** @internal Exported for testing. */
+export function contextToPrompt(context: Context): string {
   const parts: string[] = [];
   for (const msg of context.messages) {
     if (msg.role === "user") {
@@ -153,11 +154,13 @@ const RATE_LIMIT_PATTERNS = /rate.?limit|too many requests|quota|throttl|429|res
 const TRANSIENT_PATTERNS =
   /timeout|timed.?out|overloaded|service.?unavailable|502|503|504|econnreset|epipe|socket hang up/i;
 
-function isRateLimitError(message: string): boolean {
+/** @internal Exported for testing. */
+export function isRateLimitError(message: string): boolean {
   return RATE_LIMIT_PATTERNS.test(message);
 }
 
-function isTransientError(message: string): boolean {
+/** @internal Exported for testing. */
+export function isTransientError(message: string): boolean {
   return TRANSIENT_PATTERNS.test(message);
 }
 
@@ -165,7 +168,8 @@ function isTransientError(message: string): boolean {
  * Build a structured error message that OpenClaw's failover classifier can
  * parse. Includes the HTTP status code when the SDK provides one.
  */
-function buildErrorMessage(message: string, statusCode?: number): string {
+/** @internal Exported for testing. */
+export function buildErrorMessage(message: string, statusCode?: number): string {
   if (statusCode) {
     return `${statusCode} ${message}`;
   }
