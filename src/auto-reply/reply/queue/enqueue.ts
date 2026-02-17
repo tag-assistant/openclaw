@@ -56,6 +56,26 @@ export function enqueueFollowupRun(
   return true;
 }
 
+/**
+ * Remove queued followup items matching a provider message ID.
+ * Scans all active queues — messageIds are unique per provider so
+ * a global scan is safe and avoids needing a session-key lookup.
+ * Returns the number of items removed.
+ */
+export function removeFollowupRunByMessageId(messageId: string): number {
+  const trimmed = messageId.trim();
+  if (!trimmed) {
+    return 0;
+  }
+  let removed = 0;
+  for (const queue of FOLLOWUP_QUEUES.values()) {
+    const before = queue.items.length;
+    queue.items = queue.items.filter((item) => item.messageId?.trim() !== trimmed);
+    removed += before - queue.items.length;
+  }
+  return removed;
+}
+
 export function getFollowupQueueDepth(key: string): number {
   const cleaned = key.trim();
   if (!cleaned) {

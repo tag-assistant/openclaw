@@ -1,4 +1,5 @@
 import type { SlackEventMiddlewareArgs } from "@slack/bolt";
+import { removeFollowupRunByMessageId } from "../../../auto-reply/reply/queue.js";
 import { danger } from "../../../globals.js";
 import { enqueueSystemEvent } from "../../../infra/system-events.js";
 import type { SlackAppMentionEvent, SlackMessageEvent } from "../../types.js";
@@ -66,6 +67,10 @@ export function registerSlackMessageEvents(params: {
       if (message.subtype === "message_deleted") {
         const deleted = event as SlackMessageDeletedEvent;
         const channelId = deleted.channel;
+        const deletedTs = deleted.deleted_ts;
+        if (deletedTs) {
+          removeFollowupRunByMessageId(deletedTs);
+        }
         const target = await resolveSlackChannelSystemEventTarget(channelId);
         if (!target) {
           return;

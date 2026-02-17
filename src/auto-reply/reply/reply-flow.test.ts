@@ -9,7 +9,11 @@ import { buildInboundUserContextPrefix } from "./inbound-meta.js";
 import { normalizeInboundTextNewlines } from "./inbound-text.js";
 import { parseLineDirectives, hasLineDirectives } from "./line-directives.js";
 import type { FollowupRun, QueueSettings } from "./queue.js";
-import { enqueueFollowupRun, scheduleFollowupDrain } from "./queue.js";
+import {
+  enqueueFollowupRun,
+  removeFollowupRunByMessageId,
+  scheduleFollowupDrain,
+} from "./queue.js";
 import { createReplyDispatcher } from "./reply-dispatcher.js";
 import { createReplyToModeFilter, resolveReplyToMode } from "./reply-threading.js";
 
@@ -1069,6 +1073,80 @@ describe("followup queue collect routing", () => {
     await done.promise;
     expect(calls[0]?.prompt).toContain("[Queue overflow] Dropped 1 message due to cap.");
     expect(calls[0]?.prompt).toContain("- first");
+  });
+});
+
+describe("removeFollowupRunByMessageId", () => {
+  it("removes a queued item by messageId", () => {
+    const key = `test-remove-mid-${Date.now()}`;
+    const settings: QueueSettings = {
+      mode: "collect",
+      debounceMs: 0,
+      cap: 50,
+      dropPolicy: "summarize",
+    };
+
+    enqueueFollowupRun(
+      key,
+      createRun({ prompt: "keep", messageId: "m-keep", originatingChannel: "slack" }),
+      settings,
+    );
+    enqueueFollowupRun(
+      key,
+      createRun({ prompt: "remove-me", messageId: "m-del", originatingChannel: "slack" }),
+      settings,
+    );
+
+    const removed = removeFollowupRunByMessageId("m-del");
+    expect(removed).toBe(1);
+
+    // Only the kept item should remain
+    const remaining: FollowupRun[] = [];
+    const done = createDeferred<void>();
+    const runFollowup = async (run: FollowupRun) => {
+      remaining.push(run);
+      done.resolve();
+    };
+    scheduleFollowupDrain(key, runFollowup);
+    return done.promise.then(() => {
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]?.prompt).toContain("keep");
+      expect(remaining[0]?.prompt).not.toContain("remove-me");
+    });
+  });
+
+  it("returns 0 when messageId is not found", () => {
+    expect(removeFollowupRunByMessageId("nonexistent")).toBe(0);
+  });
+
+  it("returns 0 for empty messageId", () => {
+    expect(removeFollowupRunByMessageId("")).toBe(0);
+    expect(removeFollowupRunByMessageId("  ")).toBe(0);
+  });
+
+  it("removes matching items across multiple queues", () => {
+    const keyA = `test-remove-multi-a-${Date.now()}`;
+    const keyB = `test-remove-multi-b-${Date.now()}`;
+    const settings: QueueSettings = {
+      mode: "collect",
+      debounceMs: 0,
+      cap: 50,
+      dropPolicy: "summarize",
+    };
+
+    enqueueFollowupRun(
+      keyA,
+      createRun({ prompt: "queue-a", messageId: "shared-mid", originatingChannel: "discord" }),
+      settings,
+    );
+    enqueueFollowupRun(
+      keyB,
+      createRun({ prompt: "queue-b", messageId: "shared-mid", originatingChannel: "discord" }),
+      settings,
+    );
+
+    const removed = removeFollowupRunByMessageId("shared-mid");
+    expect(removed).toBe(2);
   });
 });
 

@@ -2,11 +2,13 @@ import {
   ChannelType,
   type Client,
   MessageCreateListener,
+  MessageDeleteListener,
   MessageReactionAddListener,
   MessageReactionRemoveListener,
   PresenceUpdateListener,
   type User,
 } from "@buape/carbon";
+import { removeFollowupRunByMessageId } from "../../auto-reply/reply/queue.js";
 import { danger } from "../../globals.js";
 import { formatDurationSeconds } from "../../infra/format-time/format-duration.ts";
 import { enqueueSystemEvent } from "../../infra/system-events.js";
@@ -29,6 +31,8 @@ type Logger = ReturnType<typeof import("../../logging/subsystem.js").createSubsy
 export type DiscordMessageEvent = Parameters<MessageCreateListener["handle"]>[0];
 
 export type DiscordMessageHandler = (data: DiscordMessageEvent, client: Client) => Promise<void>;
+
+type DiscordMessageDeleteEvent = Parameters<MessageDeleteListener["handle"]>[0];
 
 type DiscordReactionEvent = Parameters<MessageReactionAddListener["handle"]>[0];
 
@@ -100,6 +104,27 @@ export class DiscordMessageListener extends MessageCreateListener {
           durationMs: Date.now() - startedAt,
         });
       });
+  }
+}
+
+export class DiscordMessageDeletedListener extends MessageDeleteListener {
+  private logger?: Logger;
+
+  constructor(params: { logger?: Logger }) {
+    super();
+    this.logger = params.logger;
+  }
+
+  async handle(data: DiscordMessageDeleteEvent) {
+    try {
+      const messageId = data.id;
+      if (messageId) {
+        removeFollowupRunByMessageId(messageId);
+      }
+    } catch (err) {
+      const logger = this.logger ?? discordEventQueueLog;
+      logger.error(danger(`discord message-delete handler failed: ${String(err)}`));
+    }
   }
 }
 

@@ -56,6 +56,7 @@ import { createDiscordGatewayPlugin } from "./gateway-plugin.js";
 import { registerGateway, unregisterGateway } from "./gateway-registry.js";
 import {
   DiscordMessageListener,
+  DiscordMessageDeletedListener,
   DiscordPresenceListener,
   DiscordReactionListener,
   DiscordReactionRemoveListener,
@@ -576,6 +577,7 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
   });
 
   registerDiscordListener(client.listeners, new DiscordMessageListener(messageHandler, logger));
+  registerDiscordListener(client.listeners, new DiscordMessageDeletedListener({ logger }));
   registerDiscordListener(
     client.listeners,
     new DiscordReactionListener({
