@@ -390,12 +390,30 @@ export async function runEmbeddedPiAgent(
           return;
         }
         if (model.provider === "github-copilot") {
-          const { resolveCopilotApiToken } =
+          const { resolveCopilotApiToken, SDK_MANAGED_TOKEN } =
             await import("../../providers/github-copilot-token.js");
-          const copilotToken = await resolveCopilotApiToken({
-            githubToken: apiKeyInfo.apiKey,
-          });
-          authStorage.setRuntimeApiKey(model.provider, copilotToken.token);
+          if (apiKeyInfo.apiKey === SDK_MANAGED_TOKEN) {
+            // SDK-managed auth: try env-based token exchange for pi-ai.
+            const envToken = (
+              process.env.COPILOT_GITHUB_TOKEN ??
+              process.env.GH_TOKEN ??
+              process.env.GITHUB_TOKEN ??
+              ""
+            ).trim();
+            if (envToken) {
+              const copilotToken = await resolveCopilotApiToken({ githubToken: envToken });
+              authStorage.setRuntimeApiKey(model.provider, copilotToken.token);
+            } else {
+              log.warn(
+                "SDK-managed Copilot auth has no env token (COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN) — REST API calls may fail",
+              );
+            }
+          } else {
+            const copilotToken = await resolveCopilotApiToken({
+              githubToken: apiKeyInfo.apiKey,
+            });
+            authStorage.setRuntimeApiKey(model.provider, copilotToken.token);
+          }
         } else {
           authStorage.setRuntimeApiKey(model.provider, apiKeyInfo.apiKey);
         }
@@ -804,6 +822,7 @@ export async function runEmbeddedPiAgent(
                 reason: promptFailoverReason,
                 cfg: params.config,
                 agentDir: params.agentDir,
+                modelId,
               });
             }
             if (
@@ -894,6 +913,7 @@ export async function runEmbeddedPiAgent(
                 reason,
                 cfg: params.config,
                 agentDir: params.agentDir,
+                modelId,
               });
               if (timedOut && !isProbeSession) {
                 log.warn(

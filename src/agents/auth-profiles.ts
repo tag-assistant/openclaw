@@ -37,6 +37,7 @@ export {
   clearExpiredCooldowns,
   getSoonestCooldownExpiry,
   isProfileInCooldown,
+  isProfileInCooldownForModel,
   markAuthProfileCooldown,
   markAuthProfileFailure,
   markAuthProfileUsed,

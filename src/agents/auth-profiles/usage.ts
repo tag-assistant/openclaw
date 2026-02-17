@@ -26,6 +26,46 @@ export function isProfileInCooldown(store: AuthProfileStore, profileId: string):
 }
 
 /**
+ * Model-aware cooldown check. Profile-level cooldowns (billing, auth) block
+ * all models. Per-model cooldowns (rate_limit, timeout) only block the
+ * specific model that triggered them — other models on the same profile
+ * can still be tried.
+ */
+export function isProfileInCooldownForModel(
+  store: AuthProfileStore,
+  profileId: string,
+  modelId: string,
+): boolean {
+  const stats = store.usageStats?.[profileId];
+  if (!stats) {
+    return false;
+  }
+  const now = Date.now();
+  // Profile-level disabled (billing) always blocks.
+  if (
+    typeof stats.disabledUntil === "number" &&
+    stats.disabledUntil > 0 &&
+    now < stats.disabledUntil
+  ) {
+    return true;
+  }
+  // Profile-level cooldown (auth/unknown) blocks all models.
+  if (
+    typeof stats.cooldownUntil === "number" &&
+    stats.cooldownUntil > 0 &&
+    now < stats.cooldownUntil
+  ) {
+    return true;
+  }
+  // Per-model cooldown: only blocks the specific model.
+  const modelCooldown = stats.modelCooldowns?.[modelId];
+  if (typeof modelCooldown === "number" && modelCooldown > 0 && now < modelCooldown) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Return the soonest `unusableUntil` timestamp (ms epoch) among the given
  * profiles, or `null` when no profile has a recorded cooldown. Note: the
  * returned timestamp may be in the past if the cooldown has already expired.
@@ -147,6 +187,7 @@ export async function markAuthProfileUsed(params: {
         disabledUntil: undefined,
         disabledReason: undefined,
         failureCounts: undefined,
+        modelCooldowns: undefined,
       };
       return true;
     },
@@ -168,6 +209,7 @@ export async function markAuthProfileUsed(params: {
     disabledUntil: undefined,
     disabledReason: undefined,
     failureCounts: undefined,
+    modelCooldowns: undefined,
   };
   saveAuthProfileStore(store, agentDir);
 }
@@ -259,6 +301,8 @@ function computeNextProfileUsageStats(params: {
   now: number;
   reason: AuthProfileFailureReason;
   cfgResolved: ResolvedAuthCooldownConfig;
+  /** When set, cooldown is scoped to this model instead of the whole profile. */
+  modelId?: string;
 }): ProfileUsageStats {
   const windowMs = params.cfgResolved.failureWindowMs;
   const windowExpired =
@@ -287,7 +331,9 @@ function computeNextProfileUsageStats(params: {
     });
     updatedStats.disabledUntil = params.now + backoffMs;
     updatedStats.disabledReason = "billing";
-  } else {
+  } else if (params.reason !== "timeout") {
+    // Timeouts are not auth/rate failures — don't cooldown the profile.
+    // The LLM was just slow; retrying immediately is fine.
     const backoffMs = calculateAuthProfileCooldownMs(nextErrorCount);
     updatedStats.cooldownUntil = params.now + backoffMs;
   }
@@ -305,8 +351,10 @@ export async function markAuthProfileFailure(params: {
   reason: AuthProfileFailureReason;
   cfg?: OpenClawConfig;
   agentDir?: string;
+  /** When set and reason is rate_limit/timeout, cooldown is scoped to this model. */
+  modelId?: string;
 }): Promise<void> {
-  const { store, profileId, reason, agentDir, cfg } = params;
+  const { store, profileId, reason, agentDir, cfg, modelId } = params;
   const updated = await updateAuthProfileStoreWithLock({
     agentDir,
     updater: (freshStore) => {
@@ -329,6 +377,7 @@ export async function markAuthProfileFailure(params: {
         now,
         reason,
         cfgResolved,
+        modelId,
       });
       return true;
     },
@@ -355,6 +404,7 @@ export async function markAuthProfileFailure(params: {
     now,
     reason,
     cfgResolved,
+    modelId,
   });
   saveAuthProfileStore(store, agentDir);
 }
