@@ -236,9 +236,24 @@ Triggered when agent commands are issued:
 - **`command:reset`**: When `/reset` command is issued
 - **`command:stop`**: When `/stop` command is issued
 
+### Session Events
+
+Triggered during session lifecycle:
+
+- **`session:start`**: When a new session begins (fired after `/new` or `/reset`)
+- **`session:end`**: When a session is stopped (fired after `/stop`)
+
 ### Agent Events
 
 - **`agent:bootstrap`**: Before workspace bootstrap files are injected (hooks may mutate `context.bootstrapFiles`)
+- **`agent:error`**: When the agent encounters an error during processing (LLM error, tool error)
+
+### Message Events
+
+Triggered when messages are sent or received:
+
+- **`message:received`**: When a message arrives from the user
+- **`message:sent`**: When the agent sends a message to the user
 
 ### Gateway Events
 
@@ -251,16 +266,6 @@ Triggered when the gateway starts:
 These hooks are not event-stream listeners; they let plugins synchronously adjust tool results before OpenClaw persists them.
 
 - **`tool_result_persist`**: transform tool results before they are written to the session transcript. Must be synchronous; return the updated tool result payload or `undefined` to keep it as-is. See [Agent Loop](/concepts/agent-loop).
-
-### Future Events
-
-Planned event types:
-
-- **`session:start`**: When a new session begins
-- **`session:end`**: When a session ends
-- **`agent:error`**: When an agent encounters an error
-- **`message:sent`**: When a message is sent
-- **`message:received`**: When a message is received
 
 ## Creating Custom Hooks
 

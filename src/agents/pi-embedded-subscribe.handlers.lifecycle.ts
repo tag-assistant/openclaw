@@ -1,3 +1,4 @@
+import { createInternalHookEvent, triggerInternalHook } from "../hooks/internal-hooks.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import { formatAssistantErrorText } from "./pi-embedded-helpers.js";
@@ -52,6 +53,14 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
         error: friendlyError || lastAssistant.errorMessage || "LLM request failed.",
       },
     });
+
+    // Fire agent:error internal hook
+    void triggerInternalHook(
+      createInternalHookEvent("agent", "error", ctx.params.sessionKey ?? "", {
+        error: friendlyError || lastAssistant.errorMessage || "LLM request failed.",
+        runId: ctx.params.runId,
+      }),
+    ).catch(() => {});
   } else {
     emitAgentEvent({
       runId: ctx.params.runId,
