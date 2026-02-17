@@ -2,6 +2,7 @@ import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { loadSessionStore, resolveStorePath } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
+import { createInternalHookEvent, triggerInternalHook } from "../../hooks/internal-hooks.js";
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import {
   logMessageProcessed,
@@ -195,6 +196,28 @@ export async function dispatchReplyFromConfig(params: {
       .catch((err) => {
         logVerbose(`dispatch-from-config: message_received hook failed: ${String(err)}`);
       });
+  }
+
+  // Fire internal hook for message:received (workspace/managed hooks)
+  {
+    const hookEvent = createInternalHookEvent("message", "received", sessionKey ?? "", {
+      from: ctx.From,
+      content:
+        typeof ctx.BodyForCommands === "string"
+          ? ctx.BodyForCommands
+          : typeof ctx.RawBody === "string"
+            ? ctx.RawBody
+            : typeof ctx.Body === "string"
+              ? ctx.Body
+              : "",
+      channel: (ctx.OriginatingChannel ?? ctx.Surface ?? ctx.Provider ?? "").toLowerCase(),
+      senderId: ctx.SenderId,
+      senderName: ctx.SenderName,
+      messageId: ctx.MessageSid ?? ctx.MessageSidFirst ?? ctx.MessageSidLast,
+    });
+    void triggerInternalHook(hookEvent).catch((err) => {
+      logVerbose(`dispatch-from-config: message:received internal hook failed: ${String(err)}`);
+    });
   }
 
   // Check if we should route replies to originating channel instead of dispatcher.

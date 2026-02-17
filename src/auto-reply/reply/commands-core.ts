@@ -89,6 +89,16 @@ export async function handleCommands(params: HandleCommandsParams): Promise<Comm
     });
     await triggerInternalHook(hookEvent);
 
+    // Fire session:start internal hook for new sessions
+    const sessionStartEvent = createInternalHookEvent("session", "start", params.sessionKey ?? "", {
+      commandSource: params.command.surface,
+      senderId: params.command.senderId,
+      reason: commandAction,
+    });
+    void triggerInternalHook(sessionStartEvent).catch((err) => {
+      logVerbose(`session:start internal hook failed: ${String(err)}`);
+    });
+
     // Send hook messages immediately if present
     if (hookEvent.messages.length > 0) {
       // Use OriginatingChannel/To if available, otherwise fall back to command channel/from
