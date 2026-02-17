@@ -1,9 +1,9 @@
 import { intro, note, outro, spinner } from "@clack/prompts";
-import type { RuntimeEnv } from "../runtime.js";
 import { ensureAuthProfileStore, upsertAuthProfile } from "../agents/auth-profiles.js";
 import { updateConfig } from "../commands/models/shared.js";
 import { applyAuthProfileConfig } from "../commands/onboard-auth.js";
 import { logConfigUpdated } from "../config/logging.js";
+import type { RuntimeEnv } from "../runtime.js";
 import { stylePromptTitle } from "../terminal/prompt-style.js";
 import { getCopilotSdkAuthStatus, isCopilotSdkAvailable } from "./github-copilot-sdk.js";
 import { SDK_MANAGED_TOKEN } from "./github-copilot-token.js";
