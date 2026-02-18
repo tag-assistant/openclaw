@@ -1,0 +1,38 @@
+{
+  "id": "peon-sounds",
+  "name": "Peon Sounds",
+  "description": "Expressive game sound effects for agent voice personality. Play sounds from 75+ packs (Warcraft, Duke Nukem, GLaDOS, Deadpool, StarCraft, etc.) via tool calls.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "packsDir": {
+        "type": "string",
+        "description": "Path to peon-ping sound packs (default: ~/.openpeon/packs)"
+      },
+      "activePack": {
+        "type": "string",
+        "description": "Default/primary voice pack name (shown in full in prompt)"
+      },
+      "enabledPacks": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Whitelist of pack names to use. If omitted, all English packs are available."
+      },
+      "volume": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.5,
+        "description": "Playback volume (0-1)"
+      },
+      "maxPromptPacks": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 15,
+        "description": "Max pack names to list in system prompt summary"
+      }
+    }
+  }
+}

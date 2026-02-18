@@ -328,53 +328,6 @@ export const dispatchTelegramMessage = async ({
                 /* don't block delivery */
               }
             }
-            // Fallback: strip sound tags and play sounds even if plugin hook didn't fire
-            if (payload.text) {
-              const soundTagRe = /\[sound:([^\]]+)\]/g;
-              const soundMatches = [...payload.text.matchAll(soundTagRe)];
-              if (soundMatches.length > 0) {
-                payload.text = payload.text
-                  .replace(soundTagRe, "")
-                  .replace(/ {2,}/g, " ")
-                  .replace(/\n{3,}/g, "\n\n")
-                  .trim();
-                // Fire-and-forget sound playback via afplay
-                const { execFile } = await import("node:child_process");
-                const { existsSync } = await import("node:fs");
-                const { join } = await import("node:path");
-                const { homedir } = await import("node:os");
-                const packsDir = join(homedir(), ".openpeon", "packs");
-                const exts = [".wav", ".mp3", ".ogg", ".m4a"];
-                const playQueue: string[] = [];
-                for (const m of soundMatches.slice(0, 3)) {
-                  const key = m[1]; // e.g. "duke_nukem/Groovy"
-                  const [pack, sound] = key.split("/", 2);
-                  if (!pack || !sound) {
-                    continue;
-                  }
-                  const soundsDir = join(packsDir, pack, "sounds");
-                  for (const ext of exts) {
-                    const fp = join(soundsDir, sound + ext);
-                    if (existsSync(fp)) {
-                      playQueue.push(fp);
-                      break;
-                    }
-                  }
-                }
-                if (playQueue.length > 0) {
-                  // Play sequentially with 300ms gap
-                  const playNext = (i: number) => {
-                    if (i >= playQueue.length) {
-                      return;
-                    }
-                    execFile("afplay", [playQueue[i]], () => {
-                      setTimeout(() => playNext(i + 1), 300);
-                    });
-                  };
-                  playNext(0);
-                }
-              }
-            }
             const hasMedia = Boolean(payload.mediaUrl) || (payload.mediaUrls?.length ?? 0) > 0;
             const previewMessageId = draftStream?.messageId();
             const finalText = payload.text;
