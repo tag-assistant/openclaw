@@ -18,6 +18,7 @@ import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
 import type { OpenClawConfig, ReplyToMode, TelegramAccountConfig } from "../config/types.js";
 import { danger, logVerbose } from "../globals.js";
 import { getAgentScopedMediaLocalRoots } from "../media/local-roots.js";
+import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { TelegramMessageContext } from "./bot-message-context.js";
 import type { TelegramBotOptions } from "./bot.js";
@@ -121,6 +122,14 @@ export const dispatchTelegramMessage = async ({
   let hasStreamedMessage = false;
   const updateDraftFromPartial = (text?: string) => {
     if (!draftStream || !text) {
+      return;
+    }
+    // Strip [sound:...] tags from streaming previews
+    text = text
+      .replace(/\[sound:[^\]]+\]/g, "")
+      .replace(/ {2,}/g, " ")
+      .trim();
+    if (!text) {
       return;
     }
     if (text === lastPartialText) {
@@ -301,6 +310,71 @@ export const dispatchTelegramMessage = async ({
         deliver: async (payload, info) => {
           if (info.kind === "final") {
             await flushDraft();
+            // Run message_sending plugin hook before delivery
+            const hookRunner = getGlobalHookRunner();
+            if (payload.text && hookRunner?.hasHooks("message_sending")) {
+              try {
+                const sendingResult = await hookRunner.runMessageSending(
+                  { to: String(chatId), content: payload.text, metadata: { channel: "telegram" } },
+                  { channelId: "telegram" },
+                );
+                if (sendingResult?.cancel) {
+                  return;
+                }
+                if (sendingResult?.content != null) {
+                  payload.text = sendingResult.content;
+                }
+              } catch {
+                /* don't block delivery */
+              }
+            }
+            // Fallback: strip sound tags and play sounds even if plugin hook didn't fire
+            if (payload.text) {
+              const soundTagRe = /\[sound:([^\]]+)\]/g;
+              const soundMatches = [...payload.text.matchAll(soundTagRe)];
+              if (soundMatches.length > 0) {
+                payload.text = payload.text
+                  .replace(soundTagRe, "")
+                  .replace(/ {2,}/g, " ")
+                  .replace(/\n{3,}/g, "\n\n")
+                  .trim();
+                // Fire-and-forget sound playback via afplay
+                const { execFile } = await import("node:child_process");
+                const { existsSync } = await import("node:fs");
+                const { join } = await import("node:path");
+                const { homedir } = await import("node:os");
+                const packsDir = join(homedir(), ".openpeon", "packs");
+                const exts = [".wav", ".mp3", ".ogg", ".m4a"];
+                const playQueue: string[] = [];
+                for (const m of soundMatches.slice(0, 3)) {
+                  const key = m[1]; // e.g. "duke_nukem/Groovy"
+                  const [pack, sound] = key.split("/", 2);
+                  if (!pack || !sound) {
+                    continue;
+                  }
+                  const soundsDir = join(packsDir, pack, "sounds");
+                  for (const ext of exts) {
+                    const fp = join(soundsDir, sound + ext);
+                    if (existsSync(fp)) {
+                      playQueue.push(fp);
+                      break;
+                    }
+                  }
+                }
+                if (playQueue.length > 0) {
+                  // Play sequentially with 300ms gap
+                  const playNext = (i: number) => {
+                    if (i >= playQueue.length) {
+                      return;
+                    }
+                    execFile("afplay", [playQueue[i]], () => {
+                      setTimeout(() => playNext(i + 1), 300);
+                    });
+                  };
+                  playNext(0);
+                }
+              }
+            }
             const hasMedia = Boolean(payload.mediaUrl) || (payload.mediaUrls?.length ?? 0) > 0;
             const previewMessageId = draftStream?.messageId();
             const finalText = payload.text;

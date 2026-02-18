@@ -93,6 +93,9 @@ export function syncTelegramMenuCommands(params: {
       return;
     }
 
+    runtime.log?.(
+      `[telegram] registering ${commandsToRegister.length} commands with setMyCommands`,
+    );
     await withTelegramApiErrorLogging({
       operation: "setMyCommands",
       runtime,
