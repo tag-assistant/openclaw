@@ -11,6 +11,8 @@ interface PeonSoundsConfig {
   packsDir?: string;
   activePack?: string;
   enabledPacks?: string[];
+  favoritePacks?: string[];
+  maxFavoriteSoundsPerPack?: number;
   volume?: number;
   maxPromptPacks?: number;
 }
@@ -133,6 +135,8 @@ function formatPromptCatalog(
   catalog: Map<string, SoundEntry>,
   activePack: string | undefined,
   maxPacks: number,
+  favoritePacks?: string[],
+  maxFavoriteSoundsPerPack = 8,
 ): string {
   const packs = getPackNames(catalog);
   if (packs.length === 0) return "";
@@ -142,7 +146,7 @@ function formatPromptCatalog(
 
   const lines: string[] = [
     `## 🔊 Sound Effects (voice: ${active})`,
-    `Play sounds with the \`play_sound\` tool. Use sparingly — 0-2 per message, contextually.`,
+    `Play sounds with the \`play_sound\` tool. Use sparingly — 0-2 per message, contextually. Mix packs for variety.`,
     "",
     `### ${active} sounds`,
   ];
@@ -158,12 +162,49 @@ function formatPromptCatalog(
     lines.push(`**${cat}:** ${sounds.join(", ")}`);
   }
 
+  // Inject favorite pack highlights
+  const favorites = favoritePacks?.filter((p) => p !== active && packs.includes(p)) ?? [];
+  if (favorites.length > 0) {
+    lines.push("");
+    lines.push("### Favorite pack highlights");
+    for (const fav of favorites) {
+      const favSounds = getPackSounds(catalog, fav);
+      // Pick up to maxFavoriteSoundsPerPack, spread across categories
+      const favByCategory = new Map<string, Array<{ key: string; label: string }>>();
+      for (const s of favSounds) {
+        const cat = CATEGORY_LABELS[s.category] ?? s.category;
+        if (!favByCategory.has(cat)) favByCategory.set(cat, []);
+        favByCategory.get(cat)!.push({ key: s.key, label: s.label });
+      }
+      // Round-robin one from each category until we hit the limit
+      const picked: string[] = [];
+      let added = true;
+      while (picked.length < maxFavoriteSoundsPerPack && added) {
+        added = false;
+        for (const [, entries] of favByCategory) {
+          if (picked.length >= maxFavoriteSoundsPerPack) break;
+          if (entries.length > 0) {
+            const e = entries.shift()!;
+            picked.push(`${e.key} ("${e.label}")`);
+            added = true;
+          }
+        }
+      }
+      if (picked.length > 0) {
+        lines.push(`**${fav}:** ${picked.join(", ")}`);
+      }
+    }
+  }
+
   // List other packs as names only
-  const otherPacks = packs.filter((p) => p !== active).slice(0, maxPacks);
+  const shownPacks = new Set([active, ...favorites]);
+  const otherPacks = packs.filter((p) => !shownPacks.has(p)).slice(0, maxPacks);
   if (otherPacks.length > 0) {
     lines.push("");
-    lines.push(`### Other packs (${packs.length - 1} total)`);
-    lines.push(otherPacks.join(", ") + (packs.length - 1 > maxPacks ? ", ..." : ""));
+    lines.push(`### Other packs (${packs.length - 1 - favorites.length} more)`);
+    lines.push(
+      otherPacks.join(", ") + (packs.length - 1 - favorites.length > maxPacks ? ", ..." : ""),
+    );
     lines.push(`Use \`list_pack_sounds\` to explore any pack.`);
   }
 
@@ -203,6 +244,8 @@ export default {
     const maxPromptPacks = config.maxPromptPacks ?? 15;
     const activePack = config.activePack;
     const enabledPacks = config.enabledPacks;
+    const favoritePacks = config.favoritePacks;
+    const maxFavoriteSoundsPerPack = config.maxFavoriteSoundsPerPack ?? 8;
 
     // Check if packs exist
     if (!existsSync(packsDir)) {
@@ -213,7 +256,13 @@ export default {
     // ── Hook: inject compact catalog into system prompt ──
     api.on("before_prompt_build", () => {
       const catalog = buildCatalog(packsDir, enabledPacks);
-      const promptText = formatPromptCatalog(catalog, activePack, maxPromptPacks);
+      const promptText = formatPromptCatalog(
+        catalog,
+        activePack,
+        maxPromptPacks,
+        favoritePacks,
+        maxFavoriteSoundsPerPack,
+      );
       if (!promptText) return;
       return { prependContext: promptText };
     });

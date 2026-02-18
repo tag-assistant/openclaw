@@ -19,6 +19,18 @@
         "items": { "type": "string" },
         "description": "Whitelist of pack names to use. If omitted, all English packs are available."
       },
+      "favoritePacks": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Packs to show highlights from in the prompt (alongside the active pack). Encourages variety."
+      },
+      "maxFavoriteSoundsPerPack": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 8,
+        "description": "Max sounds to show per favorite pack in the prompt"
+      },
       "volume": {
         "type": "number",
         "minimum": 0,
