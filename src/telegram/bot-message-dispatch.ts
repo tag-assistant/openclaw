@@ -18,7 +18,6 @@ import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
 import type { OpenClawConfig, ReplyToMode, TelegramAccountConfig } from "../config/types.js";
 import { danger, logVerbose } from "../globals.js";
 import { getAgentScopedMediaLocalRoots } from "../media/local-roots.js";
-import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { TelegramMessageContext } from "./bot-message-context.js";
 import type { TelegramBotOptions } from "./bot.js";
@@ -122,14 +121,6 @@ export const dispatchTelegramMessage = async ({
   let hasStreamedMessage = false;
   const updateDraftFromPartial = (text?: string) => {
     if (!draftStream || !text) {
-      return;
-    }
-    // Strip [sound:...] tags from streaming previews
-    text = text
-      .replace(/\[sound:[^\]]+\]/g, "")
-      .replace(/ {2,}/g, " ")
-      .trim();
-    if (!text) {
       return;
     }
     if (text === lastPartialText) {
@@ -310,24 +301,6 @@ export const dispatchTelegramMessage = async ({
         deliver: async (payload, info) => {
           if (info.kind === "final") {
             await flushDraft();
-            // Run message_sending plugin hook before delivery
-            const hookRunner = getGlobalHookRunner();
-            if (payload.text && hookRunner?.hasHooks("message_sending")) {
-              try {
-                const sendingResult = await hookRunner.runMessageSending(
-                  { to: String(chatId), content: payload.text, metadata: { channel: "telegram" } },
-                  { channelId: "telegram" },
-                );
-                if (sendingResult?.cancel) {
-                  return;
-                }
-                if (sendingResult?.content != null) {
-                  payload.text = sendingResult.content;
-                }
-              } catch {
-                /* don't block delivery */
-              }
-            }
             const hasMedia = Boolean(payload.mediaUrl) || (payload.mediaUrls?.length ?? 0) > 0;
             const previewMessageId = draftStream?.messageId();
             const finalText = payload.text;

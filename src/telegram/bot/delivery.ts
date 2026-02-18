@@ -10,7 +10,6 @@ import { mediaKindFromMime } from "../../media/constants.js";
 import { fetchRemoteMedia } from "../../media/fetch.js";
 import { isGifMedia } from "../../media/mime.js";
 import { saveMediaBuffer } from "../../media/store.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import { loadWebMedia } from "../../web/media.js";
 import { withTelegramApiErrorLogging } from "../api-logging.js";
@@ -95,30 +94,6 @@ export async function deliverReplies(params: {
     return chunks;
   };
   for (const reply of replies) {
-    // Run message_sending plugin hook (allows plugins to modify content or cancel)
-    const hookRunner = getGlobalHookRunner();
-    if (reply?.text && hookRunner?.hasHooks("message_sending")) {
-      try {
-        const sendingResult = await hookRunner.runMessageSending(
-          {
-            to: chatId,
-            content: reply.text,
-            metadata: { channel: "telegram" },
-          },
-          {
-            channelId: "telegram",
-          },
-        );
-        if (sendingResult?.cancel) {
-          continue;
-        }
-        if (sendingResult?.content != null) {
-          reply.text = sendingResult.content;
-        }
-      } catch {
-        // Don't block delivery on hook failure
-      }
-    }
     const hasMedia = Boolean(reply?.mediaUrl) || (reply?.mediaUrls?.length ?? 0) > 0;
     if (!reply?.text && !hasMedia) {
       if (reply?.audioAsVoice) {
