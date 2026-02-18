@@ -141,47 +141,34 @@ function formatPromptCatalog(
   const packs = getPackNames(catalog);
   if (packs.length === 0) return "";
 
-  const active = activePack && packs.includes(activePack) ? activePack : packs[0];
-  const activeSounds = getPackSounds(catalog, active);
-
   const lines: string[] = [
-    `## 🔊 Sound Effects (voice: ${active})`,
-    `Play sounds with the \`play_sound\` tool. Use sparingly — 0-2 per message, contextually. Mix packs for variety.`,
+    `## 🔊 Sound Effects`,
+    `Play sounds with the \`play_sound\` tool. Use sparingly — 0-2 per message, contextually. Mix packs freely.`,
     "",
-    `### ${active} sounds`,
   ];
 
-  // Group active pack sounds by category
-  const byCategory = new Map<string, string[]>();
-  for (const s of activeSounds) {
-    const cat = CATEGORY_LABELS[s.category] ?? s.category;
-    if (!byCategory.has(cat)) byCategory.set(cat, []);
-    byCategory.get(cat)!.push(`${s.key} ("${s.label}")`);
-  }
-  for (const [cat, sounds] of byCategory) {
-    lines.push(`**${cat}:** ${sounds.join(", ")}`);
+  // Determine which packs get highlights — favorites if set, otherwise activePack as fallback
+  const highlightPacks = favoritePacks?.filter((p) => packs.includes(p)) ?? [];
+  if (activePack && packs.includes(activePack) && !highlightPacks.includes(activePack)) {
+    highlightPacks.unshift(activePack);
   }
 
-  // Inject favorite pack highlights
-  const favorites = favoritePacks?.filter((p) => p !== active && packs.includes(p)) ?? [];
-  if (favorites.length > 0) {
-    lines.push("");
-    lines.push("### Favorite pack highlights");
-    for (const fav of favorites) {
-      const favSounds = getPackSounds(catalog, fav);
-      // Pick up to maxFavoriteSoundsPerPack, spread across categories
-      const favByCategory = new Map<string, Array<{ key: string; label: string }>>();
-      for (const s of favSounds) {
+  // Show highlights for each featured pack — all equal, no hierarchy
+  if (highlightPacks.length > 0) {
+    lines.push("### Sound highlights");
+    for (const pack of highlightPacks) {
+      const packSounds = getPackSounds(catalog, pack);
+      const byCategory = new Map<string, Array<{ key: string; label: string }>>();
+      for (const s of packSounds) {
         const cat = CATEGORY_LABELS[s.category] ?? s.category;
-        if (!favByCategory.has(cat)) favByCategory.set(cat, []);
-        favByCategory.get(cat)!.push({ key: s.key, label: s.label });
+        if (!byCategory.has(cat)) byCategory.set(cat, []);
+        byCategory.get(cat)!.push({ key: s.key, label: s.label });
       }
-      // Round-robin one from each category until we hit the limit
       const picked: string[] = [];
       let added = true;
       while (picked.length < maxFavoriteSoundsPerPack && added) {
         added = false;
-        for (const [, entries] of favByCategory) {
+        for (const [, entries] of byCategory) {
           if (picked.length >= maxFavoriteSoundsPerPack) break;
           if (entries.length > 0) {
             const e = entries.shift()!;
@@ -191,26 +178,24 @@ function formatPromptCatalog(
         }
       }
       if (picked.length > 0) {
-        lines.push(`**${fav}:** ${picked.join(", ")}`);
+        lines.push(`**${pack}:** ${picked.join(", ")}`);
       }
     }
   }
 
-  // List other packs as names only
-  const shownPacks = new Set([active, ...favorites]);
+  // List remaining packs as names only
+  const shownPacks = new Set(highlightPacks);
   const otherPacks = packs.filter((p) => !shownPacks.has(p)).slice(0, maxPacks);
   if (otherPacks.length > 0) {
+    const remainingCount = packs.length - shownPacks.size;
     lines.push("");
-    lines.push(`### Other packs (${packs.length - 1 - favorites.length} more)`);
-    lines.push(
-      otherPacks.join(", ") + (packs.length - 1 - favorites.length > maxPacks ? ", ..." : ""),
-    );
+    lines.push(`### Other packs (${remainingCount} more)`);
+    lines.push(otherPacks.join(", ") + (remainingCount > maxPacks ? ", ..." : ""));
     lines.push(`Use \`list_pack_sounds\` to explore any pack.`);
   }
 
   return lines.join("\n");
 }
-
 // ── Playback ───────────────────────────────────────────────────────────────
 
 function playSound(filePath: string, volume: number): Promise<void> {
