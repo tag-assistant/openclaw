@@ -237,7 +237,7 @@ export default {
           },
         },
       },
-      execute: async (params: { sound?: string; sounds?: string[] }) => {
+      execute: async (_toolCallId: string, params: { sound?: string; sounds?: string[] }) => {
         const catalog = buildCatalog(packsDir, enabledPacks);
         const keys = params.sounds ?? (params.sound ? [params.sound] : []);
 
@@ -285,7 +285,7 @@ export default {
           },
         },
       },
-      execute: async (params: { pack?: string }) => {
+      execute: async (_toolCallId: string, params: { pack?: string }) => {
         const catalog = buildCatalog(packsDir, enabledPacks);
 
         if (!params.pack) {
