@@ -241,8 +241,8 @@ export default {
         const catalog = buildCatalog(packsDir, enabledPacks);
         const keys = params.sounds ?? (params.sound ? [params.sound] : []);
 
-        if (keys.length === 0) return { error: "No sound specified" };
-        if (keys.length > 5) return { error: "Max 5 sounds per call" };
+        if (keys.length === 0) return { content: [{ type: "text", text: "No sound specified" }] };
+        if (keys.length > 5) return { content: [{ type: "text", text: "Max 5 sounds per call" }] };
 
         const paths: string[] = [];
         const played: string[] = [];
@@ -267,7 +267,7 @@ export default {
         if (played.length > 0) result.push(`🔊 Playing: ${played.join(", ")}`);
         if (missing.length > 0) result.push(`⚠️ Not found: ${missing.join(", ")}`);
 
-        return { content: result.join("\n") };
+        return { content: [{ type: "text", text: result.join("\n") }] };
       },
     });
 
@@ -291,13 +291,17 @@ export default {
         if (!params.pack) {
           const packs = getPackNames(catalog);
           return {
-            content: `**Available packs (${packs.length}):**\n${packs.join(", ")}`,
+            content: [
+              { type: "text", text: `**Available packs (${packs.length}):**\n${packs.join(", ")}` },
+            ],
           };
         }
 
         const sounds = getPackSounds(catalog, params.pack);
         if (sounds.length === 0) {
-          return { error: `Pack "${params.pack}" not found or has no sounds.` };
+          return {
+            content: [{ type: "text", text: `Pack "${params.pack}" not found or has no sounds.` }],
+          };
         }
 
         const byCategory = new Map<string, string[]>();
@@ -313,7 +317,7 @@ export default {
           for (const e of entries) lines.push(`- ${e}`);
         }
 
-        return { content: lines.join("\n") };
+        return { content: [{ type: "text", text: lines.join("\n") }] };
       },
     });
 
