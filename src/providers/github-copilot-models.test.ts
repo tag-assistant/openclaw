@@ -1,14 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-  getDefaultCopilotModelIds,
-  buildCopilotModelDefinition,
-  discoverCopilotModels,
-} from "./github-copilot-models.js";
-
-// Mock the SDK discovery so we can test both paths
-vi.mock("./github-copilot-sdk.js", () => ({
-  discoverCopilotModelsViaSdk: vi.fn().mockResolvedValue(null),
-}));
+import { describe, expect, it } from "vitest";
+import { getDefaultCopilotModelIds, buildCopilotModelDefinition } from "./github-copilot-models.js";
 
 describe("github-copilot-models", () => {
   describe("getDefaultCopilotModelIds", () => {
@@ -80,51 +71,6 @@ describe("github-copilot-models", () => {
       const def = buildCopilotModelDefinition("future-model-xyz");
       expect(def.reasoning).toBe(false);
       expect(def.input).toEqual(["text"]);
-    });
-  });
-
-  describe("discoverCopilotModels", () => {
-    it("falls back to hardcoded defaults when SDK returns null", async () => {
-      const { discoverCopilotModelsViaSdk } = await import("./github-copilot-sdk.js");
-      vi.mocked(discoverCopilotModelsViaSdk).mockResolvedValue(null);
-
-      const models = await discoverCopilotModels();
-      expect(models.length).toBeGreaterThan(0);
-      // Should match hardcoded defaults
-      const ids = models.map((m) => m.id);
-      expect(ids).toContain("gpt-4o");
-      expect(ids).toContain("claude-sonnet-4");
-    });
-
-    it("uses SDK models when available", async () => {
-      const { discoverCopilotModelsViaSdk } = await import("./github-copilot-sdk.js");
-      vi.mocked(discoverCopilotModelsViaSdk).mockResolvedValue([
-        {
-          id: "sdk-model-1",
-          name: "SDK Model 1",
-          api: "openai-responses",
-          reasoning: false,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 64000,
-          maxTokens: 4096,
-        },
-      ]);
-
-      const models = await discoverCopilotModels();
-      expect(models.length).toBe(1);
-      expect(models[0]).toBeDefined();
-      expect(models[0]?.id).toBe("sdk-model-1");
-    });
-
-    it("falls back when SDK returns empty array", async () => {
-      const { discoverCopilotModelsViaSdk } = await import("./github-copilot-sdk.js");
-      vi.mocked(discoverCopilotModelsViaSdk).mockResolvedValue([]);
-
-      const models = await discoverCopilotModels();
-      // Should fall back to defaults since SDK returned empty
-      const defaults = getDefaultCopilotModelIds();
-      expect(models.length).toBe(defaults.length);
     });
   });
 });

@@ -1,22 +1,11 @@
 import type { ModelDefinitionConfig } from "../config/types.js";
-import { discoverCopilotModelsViaSdk } from "./github-copilot-sdk.js";
 
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8192;
 
-// Match Anthropic's published per-million-token pricing so cost tracking
-// reflects real-world rates even though Copilot is subscription-based.
-const CLAUDE_OPUS_COST = { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 };
-const CLAUDE_SONNET_COST = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
-const CLAUDE_HAIKU_COST = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
+// Copilot uses premium request units, not per-token pricing.
+// Cost tracking is zero until we model request-unit multipliers.
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-
-export function copilotModelCost(modelId: string): ModelDefinitionConfig["cost"] {
-  if (modelId.startsWith("claude-opus")) return CLAUDE_OPUS_COST;
-  if (modelId.startsWith("claude-sonnet")) return CLAUDE_SONNET_COST;
-  if (modelId.startsWith("claude-haiku")) return CLAUDE_HAIKU_COST;
-  return ZERO_COST;
-}
 
 // Copilot model ids vary by plan/org and can change.
 // This list matches the models reported by `copilot --model` as of 2026-02-15.
@@ -79,18 +68,6 @@ export function getDefaultCopilotModelIds(): string[] {
   return [...DEFAULT_MODEL_IDS];
 }
 
-/**
- * Discover Copilot models via the SDK, falling back to hardcoded defaults
- * if the SDK is unavailable or returns nothing.
- */
-export async function discoverCopilotModels(): Promise<ModelDefinitionConfig[]> {
-  const sdkModels = await discoverCopilotModelsViaSdk();
-  if (sdkModels && sdkModels.length > 0) {
-    return sdkModels;
-  }
-  return getDefaultCopilotModelIds().map(buildCopilotModelDefinition);
-}
-
 export function buildCopilotModelDefinition(modelId: string): ModelDefinitionConfig {
   const id = modelId.trim();
   if (!id) {
@@ -112,7 +89,7 @@ export function buildCopilotModelDefinition(modelId: string): ModelDefinitionCon
     api,
     reasoning: isReasoning,
     input: isVision ? ["text", "image"] : ["text"],
-    cost: copilotModelCost(id),
+    cost: ZERO_COST,
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     maxTokens: DEFAULT_MAX_TOKENS,
   };
