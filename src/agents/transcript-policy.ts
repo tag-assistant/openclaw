@@ -15,6 +15,7 @@ export type TranscriptPolicy = {
     includeCamelCase?: boolean;
   };
   normalizeAntigravityThinkingBlocks: boolean;
+  stripCompletionsReasoningFieldSignatures: boolean;
   applyGoogleTurnOrdering: boolean;
   validateGeminiTurns: boolean;
   validateAnthropicTurns: boolean;
@@ -110,6 +111,12 @@ export function resolveTranscriptPolicy(params: {
     : undefined;
   const normalizeAntigravityThinkingBlocks = isAntigravityClaudeModel;
 
+  // Providers using OpenAI-compatible APIs that proxy to Anthropic (e.g. GitHub
+  // Copilot → Claude) can receive thinking blocks where pi-ai stored the
+  // reasoning field name as the thinkingSignature. Strip those to prevent 400s.
+  const stripCompletionsFieldSignatures =
+    isOpenAiApi(params.modelApi) && !isOpenAi && !isGoogle && !isAnthropic;
+
   return {
     sanitizeMode: isOpenAi ? "images-only" : needsNonImageSanitize ? "full" : "images-only",
     sanitizeToolCallIds: !isOpenAi && sanitizeToolCallIds,
@@ -118,6 +125,7 @@ export function resolveTranscriptPolicy(params: {
     preserveSignatures: isAntigravityClaudeModel,
     sanitizeThoughtSignatures: isOpenAi ? undefined : sanitizeThoughtSignatures,
     normalizeAntigravityThinkingBlocks,
+    stripCompletionsReasoningFieldSignatures: stripCompletionsFieldSignatures,
     applyGoogleTurnOrdering: !isOpenAi && isGoogle,
     validateGeminiTurns: !isOpenAi && isGoogle,
     validateAnthropicTurns: !isOpenAi && isAnthropic,
