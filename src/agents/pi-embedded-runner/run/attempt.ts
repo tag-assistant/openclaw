@@ -33,6 +33,7 @@ import {
 import { DEFAULT_CONTEXT_TOKENS } from "../../defaults.js";
 import { resolveOpenClawDocsPath } from "../../docs-path.js";
 import { isTimeoutError } from "../../failover-error.js";
+import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
 import { resolveDefaultModelForAgent } from "../../model-selection.js";
 import { createOllamaStreamFn, OLLAMA_NATIVE_BASE_URL } from "../../ollama-stream.js";
@@ -666,6 +667,7 @@ export async function runEmbeddedAttempt(
           modelApi: params.model.api,
           modelId: params.modelId,
           provider: params.provider,
+          config: params.config,
           sessionManager,
           sessionId: params.sessionId,
           policy: transcriptPolicy,
@@ -968,6 +970,7 @@ export async function runEmbeddedAttempt(
             existingImages: params.images,
             historyMessages: activeSession.messages,
             maxBytes: MAX_IMAGE_BYTES,
+            maxDimensionPx: resolveImageSanitizationLimits(params.config).maxDimensionPx,
             // Enforce sandbox path restrictions when sandbox is enabled
             sandbox:
               sandbox?.enabled && sandbox?.fsBridge
