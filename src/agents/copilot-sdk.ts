@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import type {
   CopilotClient,
   CopilotClientOptions,
@@ -5,7 +6,6 @@ import type {
   ModelInfo,
   SessionConfig,
 } from "@github/copilot-sdk";
-import { execFileSync } from "node:child_process";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("agents/copilot-sdk");
