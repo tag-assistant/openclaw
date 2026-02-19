@@ -94,6 +94,7 @@ export function resolveTranscriptPolicy(params: {
     modelId,
   });
 
+  const isCopilot = provider === "github-copilot";
   const needsNonImageSanitize = isGoogle || isAnthropic || isMistral || isOpenRouterGemini;
 
   const sanitizeToolCallIds = isGoogle || isMistral || isAnthropic;
@@ -102,7 +103,9 @@ export function resolveTranscriptPolicy(params: {
     : sanitizeToolCallIds
       ? "strict"
       : undefined;
-  const repairToolUseResultPairing = isGoogle || isAnthropic;
+  // Copilot proxies to Claude and can produce orphaned toolu_* tool results
+  // that cause 400 "No tool call found for function call output" errors.
+  const repairToolUseResultPairing = isGoogle || isAnthropic || isCopilot;
   const sanitizeThoughtSignatures = isOpenRouterGemini
     ? { allowBase64Only: true, includeCamelCase: true }
     : undefined;
