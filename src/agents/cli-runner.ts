@@ -21,6 +21,23 @@ import {
 } from "./harness/context-engine-lifecycle.js";
 import { buildAgentHookContext } from "./harness/hook-context.js";
 import { buildAgentHookConversationMessages } from "./harness/hook-history.js";
+  appendImagePathsToPrompt,
+  buildCliSupervisorScopeKey,
+  buildCliArgs,
+  buildSystemPrompt,
+  enqueueCliRun,
+  normalizeCliModel,
+  parseCliJson,
+  parseCliJsonl,
+  resolveCliNoOutputTimeoutMs,
+  resolvePromptInput,
+  resolveSessionIdToSend,
+  resolveSystemPromptUsage,
+  writeCliImages,
+} from "./cli-runner/helpers.js";
+import { runCopilotCliAgent } from "./copilot-runner.js";
+import { resolveOpenClawDocsPath } from "./docs-path.js";
+import { FailoverError, resolveFailoverStatus } from "./failover-error.js";
 import {
   awaitAgentHarnessAgentEndHook,
   runAgentHarnessAgentEndHook,
@@ -135,6 +152,46 @@ async function persistApprovedCliUserTurnTranscript(params: RunCliAgentParams): 
   const target = {
     transcriptPath: params.sessionFile,
     sessionId: params.sessionId,
+  model?: string;
+  thinkLevel?: ThinkLevel;
+  timeoutMs: number;
+  runId: string;
+  extraSystemPrompt?: string;
+  streamParams?: import("./command/types.js").AgentStreamParams;
+  ownerNumbers?: string[];
+  cliSessionId?: string;
+  bootstrapPromptWarningSignaturesSeen?: string[];
+  /** Backward-compat fallback when only the previous signature is available. */
+  bootstrapPromptWarningSignature?: string;
+  images?: ImageContent[];
+}): Promise<EmbeddedPiRunResult> {
+  // Copilot SDK has its own client/session lifecycle — intercept before generic CLI path.
+  if (params.provider === "copilot-cli") {
+    if (params.images && params.images.length > 0) {
+      log.warn("copilot-cli does not support image input — images will be dropped");
+    }
+    return runCopilotCliAgent({
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      agentId: params.agentId,
+      sessionFile: params.sessionFile,
+      workspaceDir: params.workspaceDir,
+      config: params.config,
+      prompt: params.prompt,
+      model: params.model,
+      thinkLevel: params.thinkLevel,
+      timeoutMs: params.timeoutMs,
+      runId: params.runId,
+      extraSystemPrompt: params.extraSystemPrompt,
+      ownerNumbers: params.ownerNumbers,
+      cliSessionId: params.cliSessionId,
+    });
+  }
+
+  const started = Date.now();
+  const workspaceResolution = resolveRunWorkspaceDir({
+    workspaceDir: params.workspaceDir,
+    sessionKey: params.sessionKey,
     agentId: params.agentId,
     ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
     cwd: params.cwd ?? params.workspaceDir,

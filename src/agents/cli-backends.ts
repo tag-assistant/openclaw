@@ -82,6 +82,74 @@ type FallbackCliBackendPolicy = {
   prepareExecution?: CliBackendPlugin["prepareExecution"];
   resolveExecutionArgs?: CliBackendPlugin["resolveExecutionArgs"];
   nativeToolMode?: CliBackendNativeToolMode;
+// Copilot CLI model aliases — map friendly short names to the exact model ids
+// accepted by `copilot --model`. Run `copilot --model list` for the latest.
+const COPILOT_MODEL_ALIASES: Record<string, string> = {
+  // Claude
+  opus: "claude-opus-4.6",
+  "opus-4.6": "claude-opus-4.6",
+  "opus-4.6-fast": "claude-opus-4.6-fast",
+  "opus-4.5": "claude-opus-4.5",
+  sonnet: "claude-sonnet-4.5",
+  "sonnet-4.5": "claude-sonnet-4.5",
+  "sonnet-4": "claude-sonnet-4",
+  haiku: "claude-haiku-4.5",
+  "haiku-4.5": "claude-haiku-4.5",
+  // Gemini
+  gemini: "gemini-3-pro-preview",
+  "gemini-3-pro": "gemini-3-pro-preview",
+  // GPT
+  "gpt-5": "gpt-5",
+  "gpt-5-mini": "gpt-5-mini",
+  "gpt-5.1": "gpt-5.1",
+  "gpt-5.2": "gpt-5.2",
+  codex: "gpt-5.3-codex",
+  "codex-max": "gpt-5.1-codex-max",
+};
+
+const DEFAULT_COPILOT_BACKEND: CliBackendConfig = {
+  command: "copilot",
+  output: "text",
+  input: "arg",
+  modelAliases: COPILOT_MODEL_ALIASES,
+};
+
+const DEFAULT_CODEX_BACKEND: CliBackendConfig = {
+  command: "codex",
+  args: [
+    "exec",
+    "--json",
+    "--color",
+    "never",
+    "--sandbox",
+    "workspace-write",
+    "--skip-git-repo-check",
+  ],
+  resumeArgs: [
+    "exec",
+    "resume",
+    "{sessionId}",
+    "--color",
+    "never",
+    "--sandbox",
+    "workspace-write",
+    "--skip-git-repo-check",
+  ],
+  output: "jsonl",
+  resumeOutput: "text",
+  input: "arg",
+  modelArg: "--model",
+  sessionIdFields: ["thread_id"],
+  sessionMode: "existing",
+  imageArg: "--image",
+  imageMode: "repeat",
+  reliability: {
+    watchdog: {
+      fresh: { ...CLI_FRESH_WATCHDOG_DEFAULTS },
+      resume: { ...CLI_RESUME_WATCHDOG_DEFAULTS },
+    },
+  },
+  serialize: true,
 };
 
 const FALLBACK_CLI_BACKEND_POLICIES: Record<string, FallbackCliBackendPolicy> = {};
@@ -332,6 +400,21 @@ export function resolveCliBackendLiveTest(provider: string): ResolvedCliBackendL
   };
 }
 
+=======
+export function resolveCliBackendIds(cfg?: OpenClawConfig): Set<string> {
+  const ids = new Set<string>([
+    normalizeBackendKey("claude-cli"),
+    normalizeBackendKey("codex-cli"),
+    normalizeBackendKey("copilot-cli"),
+  ]);
+  const configured = cfg?.agents?.defaults?.cliBackends ?? {};
+  for (const key of Object.keys(configured)) {
+    ids.add(normalizeBackendKey(key));
+  }
+  return ids;
+}
+
+>>>>>>> 8d2bb990b5 (feat: add Copilot SDK provider integration with streaming support)
 export function resolveCliBackendConfig(
   provider: string,
   cfg?: OpenClawConfig,
@@ -410,6 +493,18 @@ export function resolveCliBackendConfig(
       nativeToolMode: fallbackPolicy.nativeToolMode,
     };
   }
+  // copilot-cli uses the Copilot SDK (not a generic CLI subprocess).
+  // Return a stub config so callers recognise it as a valid backend; the actual
+  // execution path is handled in copilot-runner.ts.
+  if (normalized === "copilot-cli") {
+    const merged = mergeBackendConfig(DEFAULT_COPILOT_BACKEND, override);
+    const command = merged.command?.trim();
+    if (!command) {
+      return null;
+    }
+    return { id: normalized, config: { ...merged, command } };
+  }
+
   const mergedFallback = fallbackPolicy?.baseConfig
     ? mergeBackendConfig(fallbackPolicy.baseConfig, override)
     : override;
@@ -417,6 +512,22 @@ export function resolveCliBackendConfig(
     ? fallbackPolicy.normalizeConfig(mergedFallback, normalizeContext)
     : mergedFallback;
   const command = config.command?.trim();
+  // copilot-cli uses the Copilot SDK (not a generic CLI subprocess).
+  // Return a stub config so callers recognise it as a valid backend; the actual
+  // execution path is handled in copilot-runner.ts.
+  if (normalized === "copilot-cli") {
+    const merged = mergeBackendConfig(DEFAULT_COPILOT_BACKEND, override);
+    const command = merged.command?.trim();
+    if (!command) {
+      return null;
+    }
+    return { id: normalized, config: { ...merged, command } };
+  }
+
+  if (!override) {
+    return null;
+  }
+  const command = override.command?.trim();
   if (!command) {
     return null;
   }

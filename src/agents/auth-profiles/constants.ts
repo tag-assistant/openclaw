@@ -11,6 +11,7 @@ export const AUTH_STORE_VERSION = 1;
 export const CLAUDE_CLI_PROFILE_ID = "anthropic:claude-cli";
 /** @deprecated OpenAI Codex provider-owned CLI profile id; do not use from third-party plugins. */
 export const CODEX_CLI_PROFILE_ID = "openai-codex:codex-cli";
+export const COPILOT_CLI_PROFILE_ID = "github-copilot:copilot-cli";
 export const OPENAI_CODEX_DEFAULT_PROFILE_ID = "openai-codex:default";
 /** @deprecated MiniMax provider-owned CLI profile id; do not use from third-party plugins. */
 export const MINIMAX_CLI_PROFILE_ID = "minimax-portal:minimax-cli";
