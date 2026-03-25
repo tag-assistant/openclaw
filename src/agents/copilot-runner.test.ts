@@ -9,6 +9,12 @@ vi.mock("./copilot-sdk.js", () => ({
   runCopilotAgent: (...args: unknown[]) => runCopilotAgentMock(...args),
 }));
 
+// Mock copilot-session-hooks.js to verify it's called and hooks are passed through
+const buildCopilotSessionHooksMock = vi.fn();
+vi.mock("./copilot-session-hooks.js", () => ({
+  buildCopilotSessionHooks: (...args: unknown[]) => buildCopilotSessionHooksMock(...args),
+}));
+
 // Stub out bootstrap/docs resolution to avoid filesystem side effects
 vi.mock("./bootstrap-files.js", () => ({
   resolveBootstrapContextForRun: vi.fn(async () => ({ contextFiles: [] })),
@@ -25,6 +31,8 @@ describe("runCopilotCliAgent", () => {
   beforeEach(() => {
     checkCopilotAvailableMock.mockReset();
     runCopilotAgentMock.mockReset();
+    buildCopilotSessionHooksMock.mockReset();
+    buildCopilotSessionHooksMock.mockReturnValue({ onSessionStart: vi.fn() });
   });
 
   it("throws FailoverError when copilot is not available", async () => {
@@ -173,5 +181,52 @@ describe("runCopilotCliAgent", () => {
     // When model is "default", SDK receives undefined so it uses its own default
     expect(sdkArgs.model).toBeUndefined();
     expect(result.meta?.agentMeta?.model).toBe("default");
+  });
+
+  it("builds session hooks and passes them to runCopilotAgent", async () => {
+    const fakeHooks = { onSessionStart: vi.fn(), onPreToolUse: vi.fn() };
+    buildCopilotSessionHooksMock.mockReturnValue(fakeHooks);
+    checkCopilotAvailableMock.mockReturnValue({ available: true });
+    runCopilotAgentMock.mockResolvedValueOnce({
+      text: "hooked",
+      sessionId: "copilot-session-hooks",
+    });
+
+    await runCopilotCliAgent({
+      sessionId: "s1",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp",
+      prompt: "hello",
+      timeoutMs: 5_000,
+      runId: "run-hooks",
+    });
+
+    // Verify buildCopilotSessionHooks was called
+    expect(buildCopilotSessionHooksMock).toHaveBeenCalledTimes(1);
+
+    // Verify hooks were passed through to runCopilotAgent
+    const sdkArgs = runCopilotAgentMock.mock.calls[0]?.[0];
+    expect(sdkArgs.hooks).toBe(fakeHooks);
+  });
+
+  it("does not pass hooks when buildCopilotSessionHooks returns undefined", async () => {
+    buildCopilotSessionHooksMock.mockReturnValue(undefined);
+    checkCopilotAvailableMock.mockReturnValue({ available: true });
+    runCopilotAgentMock.mockResolvedValueOnce({
+      text: "no hooks",
+      sessionId: "copilot-session-no-hooks",
+    });
+
+    await runCopilotCliAgent({
+      sessionId: "s1",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp",
+      prompt: "hello",
+      timeoutMs: 5_000,
+      runId: "run-no-hooks",
+    });
+
+    const sdkArgs = runCopilotAgentMock.mock.calls[0]?.[0];
+    expect(sdkArgs.hooks).toBeUndefined();
   });
 });
