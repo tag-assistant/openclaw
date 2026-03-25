@@ -180,9 +180,9 @@ export async function runCopilotAgent(
   } finally {
     if (session) {
       try {
-        await session.destroy();
+        await session.disconnect();
       } catch (err) {
-        log.warn("failed to destroy copilot session", {
+        log.warn("failed to disconnect copilot session", {
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -193,6 +193,115 @@ export async function runCopilotAgent(
       log.warn("failed to stop copilot client", {
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+}
+
+/**
+ * Session filter for listing Copilot sessions.
+ */
+export type CopilotSessionFilter = {
+  cwd?: string;
+  repository?: string;
+  branch?: string;
+};
+
+/**
+ * Metadata for a persisted Copilot session.
+ */
+export type CopilotSessionMetadata = {
+  sessionId: string;
+  startTime: Date;
+  modifiedTime: Date;
+  summary?: string;
+  isRemote: boolean;
+  context?: {
+    cwd?: string;
+    gitRoot?: string;
+    repository?: string;
+    branch?: string;
+  };
+};
+
+/**
+ * List persisted Copilot sessions, optionally filtered.
+ */
+export async function listCopilotSessions(
+  filter?: CopilotSessionFilter,
+): Promise<CopilotSessionMetadata[]> {
+  let client: CopilotClient | undefined;
+  try {
+    client = await createCopilotClient();
+    await ensureAuthenticated(client);
+    const sessions = await client.listSessions(filter);
+    return sessions;
+  } catch (error) {
+    log.warn("failed to list copilot sessions", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  } finally {
+    if (client) {
+      try {
+        await client.stop();
+      } catch {}
+    }
+  }
+}
+
+/**
+ * Get the session ID of the most recently used Copilot session.
+ */
+export async function getLastCopilotSessionId(): Promise<string | null> {
+  let client: CopilotClient | undefined;
+  try {
+    client = await createCopilotClient();
+    await ensureAuthenticated(client);
+    const sessionId = await client.getLastSessionId();
+    return sessionId ?? null;
+  } catch (error) {
+    log.warn("failed to get last copilot session id", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  } finally {
+    if (client) {
+      try {
+        await client.stop();
+      } catch {}
+    }
+  }
+}
+
+/**
+ * Permanently destroy a Copilot session by ID.
+ * Use this for explicit cleanup when a session is no longer needed.
+ */
+export async function destroyCopilotSession(sessionId: string): Promise<boolean> {
+  let client: CopilotClient | undefined;
+  try {
+    client = await createCopilotClient();
+    await ensureAuthenticated(client);
+    const session = await client.resumeSession(sessionId, {
+      onPermissionRequest: async () => ({
+        kind: "denied-interactively-by-user" as const,
+        feedback: "Tool use is not permitted in this session.",
+      }),
+    });
+    await session.destroy();
+    log.info("destroyed copilot session", { sessionId });
+    return true;
+  } catch (error) {
+    log.warn("failed to destroy copilot session", {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  } finally {
+    if (client) {
+      try {
+        await client.stop();
+      } catch {}
     }
   }
 }

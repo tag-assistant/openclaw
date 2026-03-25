@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mockSession = {
   sendAndWait: vi.fn(),
   destroy: vi.fn(),
+  disconnect: vi.fn(),
   sessionId: "mock-session-id",
 };
 const mockClient = {
@@ -14,6 +15,8 @@ const mockClient = {
     .fn()
     .mockResolvedValue({ isAuthenticated: true, authType: "user", login: "octocat" }),
   listModels: vi.fn(),
+  listSessions: vi.fn(),
+  getLastSessionId: vi.fn(),
 };
 
 vi.mock("@github/copilot-sdk", () => {
@@ -31,6 +34,7 @@ describe("copilot-sdk", () => {
   afterEach(() => {
     mockSession.sendAndWait.mockReset();
     mockSession.destroy.mockReset().mockResolvedValue(undefined);
+    mockSession.disconnect.mockReset().mockResolvedValue(undefined);
     mockClient.stop.mockReset().mockResolvedValue(undefined);
     mockClient.createSession.mockReset().mockResolvedValue(mockSession);
     mockClient.resumeSession.mockReset().mockResolvedValue(mockSession);
@@ -38,6 +42,8 @@ describe("copilot-sdk", () => {
       .mockReset()
       .mockResolvedValue({ isAuthenticated: true, authType: "user", login: "octocat" });
     mockClient.listModels.mockReset();
+    mockClient.listSessions.mockReset();
+    mockClient.getLastSessionId.mockReset();
   });
 
   describe("isCopilotCliInstalled", () => {
@@ -132,7 +138,7 @@ describe("copilot-sdk", () => {
       expect(mockClient.createSession).toHaveBeenCalledTimes(1);
       expect(mockClient.resumeSession).not.toHaveBeenCalled();
       expect(mockSession.sendAndWait).toHaveBeenCalledWith({ prompt: "Say hello" }, 5_000);
-      expect(mockSession.destroy).toHaveBeenCalled();
+      expect(mockSession.disconnect).toHaveBeenCalled();
       expect(mockClient.stop).toHaveBeenCalled();
     });
 
@@ -177,7 +183,7 @@ describe("copilot-sdk", () => {
       );
 
       // Cleanup should still happen
-      expect(mockSession.destroy).toHaveBeenCalled();
+      expect(mockSession.disconnect).toHaveBeenCalled();
       expect(mockClient.stop).toHaveBeenCalled();
     });
 
@@ -239,6 +245,97 @@ describe("copilot-sdk", () => {
       const { createCopilotClient } = await import("./copilot-sdk.js");
       const client = await createCopilotClient();
       expect(client).toBeDefined();
+    });
+  });
+
+  describe("listCopilotSessions", () => {
+    it("returns sessions when authenticated", async () => {
+      const mockSessions = [
+        {
+          sessionId: "s1",
+          startTime: new Date("2026-03-25T00:00:00Z"),
+          modifiedTime: new Date("2026-03-25T01:00:00Z"),
+          summary: "Fix bug",
+          context: { cwd: "/tmp", repository: "owner/repo", branch: "main" },
+        },
+      ];
+      mockClient.listSessions.mockResolvedValueOnce(mockSessions);
+
+      const { listCopilotSessions } = await import("./copilot-sdk.js");
+      const sessions = await listCopilotSessions();
+      expect(sessions).toEqual(mockSessions);
+      expect(mockClient.listSessions).toHaveBeenCalledWith(undefined);
+      expect(mockClient.stop).toHaveBeenCalled();
+    });
+
+    it("passes filter to client", async () => {
+      mockClient.listSessions.mockResolvedValueOnce([]);
+
+      const { listCopilotSessions } = await import("./copilot-sdk.js");
+      await listCopilotSessions({ repository: "owner/repo", branch: "main" });
+      expect(mockClient.listSessions).toHaveBeenCalledWith({
+        repository: "owner/repo",
+        branch: "main",
+      });
+    });
+
+    it("returns empty array on failure", async () => {
+      mockClient.listSessions.mockRejectedValueOnce(new Error("fail"));
+
+      const { listCopilotSessions } = await import("./copilot-sdk.js");
+      const sessions = await listCopilotSessions();
+      expect(sessions).toEqual([]);
+    });
+  });
+
+  describe("getLastCopilotSessionId", () => {
+    it("returns session id when available", async () => {
+      mockClient.getLastSessionId.mockResolvedValueOnce("last-session-123");
+
+      const { getLastCopilotSessionId } = await import("./copilot-sdk.js");
+      const id = await getLastCopilotSessionId();
+      expect(id).toBe("last-session-123");
+      expect(mockClient.stop).toHaveBeenCalled();
+    });
+
+    it("returns null when no sessions exist", async () => {
+      mockClient.getLastSessionId.mockResolvedValueOnce(undefined);
+
+      const { getLastCopilotSessionId } = await import("./copilot-sdk.js");
+      const id = await getLastCopilotSessionId();
+      expect(id).toBeNull();
+    });
+
+    it("returns null on error", async () => {
+      mockClient.getLastSessionId.mockRejectedValueOnce(new Error("fail"));
+
+      const { getLastCopilotSessionId } = await import("./copilot-sdk.js");
+      const id = await getLastCopilotSessionId();
+      expect(id).toBeNull();
+    });
+  });
+
+  describe("destroyCopilotSession", () => {
+    it("resumes and destroys session", async () => {
+      mockSession.destroy.mockResolvedValueOnce(undefined);
+
+      const { destroyCopilotSession } = await import("./copilot-sdk.js");
+      const result = await destroyCopilotSession("session-to-delete");
+      expect(result).toBe(true);
+      expect(mockClient.resumeSession).toHaveBeenCalledWith(
+        "session-to-delete",
+        expect.objectContaining({ onPermissionRequest: expect.any(Function) }),
+      );
+      expect(mockSession.destroy).toHaveBeenCalled();
+      expect(mockClient.stop).toHaveBeenCalled();
+    });
+
+    it("returns false on failure", async () => {
+      mockClient.resumeSession.mockRejectedValueOnce(new Error("not found"));
+
+      const { destroyCopilotSession } = await import("./copilot-sdk.js");
+      const result = await destroyCopilotSession("bad-id");
+      expect(result).toBe(false);
     });
   });
 });
