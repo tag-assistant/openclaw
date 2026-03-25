@@ -6,6 +6,7 @@ import { resolveSessionAgentIds } from "./agent-scope.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-files.js";
 import { resolveCliBackendConfig } from "./cli-backends.js";
 import { buildSystemPrompt, normalizeCliModel } from "./cli-runner/helpers.js";
+import { createCopilotEventLogger, extractUsageFromEvents } from "./copilot-event-mapper.js";
 import { checkCopilotAvailable, runCopilotAgent } from "./copilot-sdk.js";
 import { resolveOpenClawDocsPath } from "./docs-path.js";
 import { FailoverError, resolveFailoverStatus } from "./failover-error.js";
@@ -114,6 +115,14 @@ export async function runCopilotCliAgent(params: {
   try {
     log.info(`copilot-cli exec: model=${modelId} promptChars=${params.prompt.length}`);
 
+    // Collect events for usage extraction
+    const collectedEvents: import("@github/copilot-sdk").SessionEvent[] = [];
+    const eventLogger = createCopilotEventLogger((msg, data) => log.info(msg, data));
+    const onEvent = (event: import("@github/copilot-sdk").SessionEvent) => {
+      collectedEvents.push(event);
+      eventLogger(event);
+    };
+
     const result = await runCopilotAgent({
       prompt: params.prompt,
       model: modelId === "default" ? undefined : modelId,
@@ -121,10 +130,12 @@ export async function runCopilotCliAgent(params: {
       systemPrompt,
       timeoutMs: params.timeoutMs,
       sessionId: params.cliSessionId,
+      onEvent,
     });
 
     const text = result.text?.trim();
     const payloads = text ? [{ text }] : undefined;
+    const usage = extractUsageFromEvents(collectedEvents);
 
     return {
       payloads,
@@ -134,6 +145,15 @@ export async function runCopilotCliAgent(params: {
           sessionId: result.sessionId ?? params.sessionId ?? "",
           provider: "copilot-cli",
           model: modelId,
+          ...(usage
+            ? {
+                usage: {
+                  input: usage.promptTokens,
+                  output: usage.completionTokens,
+                  total: usage.totalTokens,
+                },
+              }
+            : {}),
         },
       },
     };

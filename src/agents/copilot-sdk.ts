@@ -4,6 +4,7 @@ import type {
   CopilotSession,
   ModelInfo,
   SessionConfig,
+  SessionEvent,
 } from "@github/copilot-sdk";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 
@@ -116,6 +117,8 @@ export type CopilotAgentRunOptions = {
   systemPrompt?: string;
   timeoutMs?: number;
   sessionId?: string;
+  /** Optional callback to receive all raw session events for observability. */
+  onEvent?: (event: SessionEvent) => void;
 };
 
 export type CopilotAgentRunResult = {
@@ -165,6 +168,12 @@ export async function runCopilotAgent(
     }
 
     const timeoutMs = options.timeoutMs ?? 120_000;
+
+    // Subscribe to session events for observability before sending
+    if (options.onEvent) {
+      session.on(options.onEvent);
+    }
+
     const response = await session.sendAndWait({ prompt: options.prompt }, timeoutMs);
 
     const text = response?.data?.content ?? "";
