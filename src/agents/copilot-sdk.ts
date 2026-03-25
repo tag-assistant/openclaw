@@ -112,6 +112,8 @@ export async function listCopilotModels(options?: { cwd?: string }): Promise<Mod
 export type CopilotAgentRunOptions = {
   prompt: string;
   model?: string;
+  /** Switch to a different model mid-session (calls session.setModel() after create/resume). */
+  modelOverride?: string;
   workspaceDir?: string;
   systemPrompt?: string;
   timeoutMs?: number;
@@ -121,6 +123,8 @@ export type CopilotAgentRunOptions = {
 export type CopilotAgentRunResult = {
   text: string;
   sessionId: string;
+  /** The model actually used (may differ from requested if setModel() was called). */
+  model?: string;
 };
 
 /**
@@ -164,6 +168,18 @@ export async function runCopilotAgent(
       session = await client.createSession(sessionConfig);
     }
 
+    // Apply dynamic model switch if requested
+    let activeModel = options.model;
+    if (options.modelOverride) {
+      log.info("switching copilot session model", {
+        sessionId: session.sessionId,
+        from: options.model ?? "default",
+        to: options.modelOverride,
+      });
+      await session.setModel(options.modelOverride);
+      activeModel = options.modelOverride;
+    }
+
     const timeoutMs = options.timeoutMs ?? 120_000;
     const response = await session.sendAndWait({ prompt: options.prompt }, timeoutMs);
 
@@ -172,11 +188,11 @@ export async function runCopilotAgent(
 
     log.info(`copilot agent run completed`, {
       sessionId,
-      model: options.model,
+      model: activeModel,
       responseLength: text.length,
     });
 
-    return { text, sessionId };
+    return { text, sessionId, model: activeModel };
   } finally {
     if (session) {
       try {

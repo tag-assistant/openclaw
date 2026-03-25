@@ -117,6 +117,9 @@ export async function runCopilotCliAgent(params: {
     const result = await runCopilotAgent({
       prompt: params.prompt,
       model: modelId === "default" ? undefined : modelId,
+      // When resuming an existing session, use modelOverride to dynamically
+      // switch the model via setModel() instead of requiring a new session.
+      modelOverride: params.cliSessionId && modelId !== "default" ? modelId : undefined,
       workspaceDir: resolvedWorkspace,
       systemPrompt,
       timeoutMs: params.timeoutMs,
@@ -133,7 +136,7 @@ export async function runCopilotCliAgent(params: {
         agentMeta: {
           sessionId: result.sessionId ?? params.sessionId ?? "",
           provider: "copilot-cli",
-          model: modelId,
+          model: result.model ?? modelId,
         },
       },
     };
