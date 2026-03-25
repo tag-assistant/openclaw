@@ -199,6 +199,74 @@ describe("copilot-sdk", () => {
         content: "You are a helpful assistant.",
       });
     });
+
+    it("passes onUserInputRequest to session config when onUserInput is provided", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "Asked!" },
+      });
+
+      const userInputHandler = vi.fn().mockResolvedValue({
+        answer: "Yes",
+        wasFreeform: false,
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "ask me something",
+        timeoutMs: 5_000,
+        onUserInput: userInputHandler,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.onUserInputRequest).toBeDefined();
+      expect(typeof sessionConfig.onUserInputRequest).toBe("function");
+    });
+
+    it("does not set onUserInputRequest when onUserInput is not provided", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "No handler." },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "no user input",
+        timeoutMs: 5_000,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.onUserInputRequest).toBeUndefined();
+    });
+
+    it("wraps onUserInput and forwards request to the handler", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "Done" },
+      });
+
+      const userInputHandler = vi.fn().mockResolvedValue({
+        answer: "Option A",
+        wasFreeform: false,
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "choose",
+        timeoutMs: 5_000,
+        onUserInput: userInputHandler,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      // Simulate the SDK calling the handler
+      const result = await sessionConfig.onUserInputRequest(
+        { question: "Pick one", choices: ["A", "B"], allowFreeform: true },
+        {},
+      );
+      expect(userInputHandler).toHaveBeenCalledWith({
+        question: "Pick one",
+        choices: ["A", "B"],
+        allowFreeform: true,
+      });
+      expect(result).toEqual({ answer: "Option A", wasFreeform: false });
+    });
   });
 
   describe("listCopilotModels", () => {

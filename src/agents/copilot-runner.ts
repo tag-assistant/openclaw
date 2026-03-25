@@ -7,6 +7,7 @@ import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-fi
 import { resolveCliBackendConfig } from "./cli-backends.js";
 import { buildSystemPrompt, normalizeCliModel } from "./cli-runner/helpers.js";
 import { checkCopilotAvailable, runCopilotAgent } from "./copilot-sdk.js";
+import { createTimeoutUserInputHandler } from "./copilot-user-input.js";
 import { resolveOpenClawDocsPath } from "./docs-path.js";
 import { FailoverError, resolveFailoverStatus } from "./failover-error.js";
 import { classifyFailoverReason, isFailoverErrorMessage } from "./pi-embedded-helpers.js";
@@ -114,6 +115,17 @@ export async function runCopilotCliAgent(params: {
   try {
     log.info(`copilot-cli exec: model=${modelId} promptChars=${params.prompt.length}`);
 
+    // Placeholder user input handler — auto-responds with a default message.
+    // The real handler will be wired to OpenClaw's messaging layer in a future PR.
+    // Having it enabled means the SDK exposes `ask_user` to the agent.
+    const onUserInput = createTimeoutUserInputHandler({
+      handler: async () => ({
+        answer: "User interaction not available in this session",
+        wasFreeform: true,
+      }),
+      timeoutMs: 5_000,
+    });
+
     const result = await runCopilotAgent({
       prompt: params.prompt,
       model: modelId === "default" ? undefined : modelId,
@@ -121,6 +133,7 @@ export async function runCopilotCliAgent(params: {
       systemPrompt,
       timeoutMs: params.timeoutMs,
       sessionId: params.cliSessionId,
+      onUserInput,
     });
 
     const text = result.text?.trim();
