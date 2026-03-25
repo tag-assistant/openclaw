@@ -116,6 +116,7 @@ export type CopilotAgentRunOptions = {
   systemPrompt?: string;
   timeoutMs?: number;
   sessionId?: string;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
 };
 
 export type CopilotAgentRunResult = {
@@ -139,8 +140,13 @@ export async function runCopilotAgent(
   try {
     await ensureAuthenticated(client);
 
+    if (options.reasoningEffort) {
+      log.info(`copilot-sdk: reasoningEffort=${options.reasoningEffort}`);
+    }
+
     const sessionConfig: SessionConfig = {
       model: options.model,
+      reasoningEffort: options.reasoningEffort,
       workingDirectory: options.workspaceDir,
       streaming: true,
       // Deny tool-use permission requests by default (security: callers must
