@@ -52,6 +52,8 @@ export type EmbeddedPiRunMeta = {
     name: string;
     arguments: string;
   }>;
+  /** Workspace path for Copilot SDK infinite session state persistence. */
+  workspacePath?: string;
 };
 
 export type EmbeddedPiRunResult = {

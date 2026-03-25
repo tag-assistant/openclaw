@@ -114,6 +114,19 @@ export async function runCopilotCliAgent(params: {
   try {
     log.info(`copilot-cli exec: model=${modelId} promptChars=${params.prompt.length}`);
 
+    // Enable infinite sessions by default for copilot-cli runs (they can be long-running).
+    // Thresholds are configurable via cli backend config overrides.
+    const infiniteSessionsConfig = backendConfig?.config as Record<string, unknown> | undefined;
+    const infiniteSessions = {
+      enabled: true,
+      ...(typeof infiniteSessionsConfig?.backgroundCompactionThreshold === "number"
+        ? { backgroundCompactionThreshold: infiniteSessionsConfig.backgroundCompactionThreshold }
+        : {}),
+      ...(typeof infiniteSessionsConfig?.bufferExhaustionThreshold === "number"
+        ? { bufferExhaustionThreshold: infiniteSessionsConfig.bufferExhaustionThreshold }
+        : {}),
+    };
+
     const result = await runCopilotAgent({
       prompt: params.prompt,
       model: modelId === "default" ? undefined : modelId,
@@ -121,6 +134,7 @@ export async function runCopilotCliAgent(params: {
       systemPrompt,
       timeoutMs: params.timeoutMs,
       sessionId: params.cliSessionId,
+      infiniteSessions,
     });
 
     const text = result.text?.trim();
@@ -135,6 +149,7 @@ export async function runCopilotCliAgent(params: {
           provider: "copilot-cli",
           model: modelId,
         },
+        workspacePath: result.workspacePath,
       },
     };
   } catch (err) {
