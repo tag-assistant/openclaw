@@ -2,6 +2,7 @@ import type {
   CopilotClient,
   CopilotClientOptions,
   CopilotSession,
+  InfiniteSessionConfig,
   ModelInfo,
   SessionConfig,
 } from "@github/copilot-sdk";
@@ -116,11 +117,17 @@ export type CopilotAgentRunOptions = {
   systemPrompt?: string;
   timeoutMs?: number;
   sessionId?: string;
+  infiniteSessions?: {
+    enabled?: boolean;
+    backgroundCompactionThreshold?: number;
+    bufferExhaustionThreshold?: number;
+  };
 };
 
 export type CopilotAgentRunResult = {
   text: string;
   sessionId: string;
+  workspacePath?: string;
 };
 
 /**
@@ -151,6 +158,10 @@ export async function runCopilotAgent(
       }),
     };
 
+    if (options.infiniteSessions) {
+      sessionConfig.infiniteSessions = options.infiniteSessions as InfiniteSessionConfig;
+    }
+
     if (options.systemPrompt) {
       sessionConfig.systemMessage = {
         mode: "append",
@@ -169,6 +180,11 @@ export async function runCopilotAgent(
 
     const text = response?.data?.content ?? "";
     const sessionId = session.sessionId;
+    const workspacePath = session.workspacePath;
+
+    if (workspacePath) {
+      log.info("infinite session workspace", { workspacePath, sessionId });
+    }
 
     log.info(`copilot agent run completed`, {
       sessionId,
@@ -176,7 +192,7 @@ export async function runCopilotAgent(
       responseLength: text.length,
     });
 
-    return { text, sessionId };
+    return { text, sessionId, workspacePath };
   } finally {
     if (session) {
       try {

@@ -5,6 +5,7 @@ const mockSession = {
   sendAndWait: vi.fn(),
   destroy: vi.fn(),
   sessionId: "mock-session-id",
+  workspacePath: undefined as string | undefined,
 };
 const mockClient = {
   stop: vi.fn(),
@@ -198,6 +199,62 @@ describe("copilot-sdk", () => {
         mode: "append",
         content: "You are a helpful assistant.",
       });
+    });
+
+    it("passes infiniteSessions config to session", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "ok" },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "hi",
+        timeoutMs: 5_000,
+        infiniteSessions: {
+          enabled: true,
+          backgroundCompactionThreshold: 0.75,
+          bufferExhaustionThreshold: 0.9,
+        },
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.infiniteSessions).toEqual({
+        enabled: true,
+        backgroundCompactionThreshold: 0.75,
+        bufferExhaustionThreshold: 0.9,
+      });
+    });
+
+    it("does not set infiniteSessions when not provided", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "ok" },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "hi",
+        timeoutMs: 5_000,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.infiniteSessions).toBeUndefined();
+    });
+
+    it("returns workspacePath when available", async () => {
+      mockSession.workspacePath = "/tmp/copilot-workspace/session-123";
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "ok" },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      const result = await runCopilotAgent({
+        prompt: "hi",
+        timeoutMs: 5_000,
+        infiniteSessions: { enabled: true },
+      });
+
+      expect(result.workspacePath).toBe("/tmp/copilot-workspace/session-123");
+      mockSession.workspacePath = undefined;
     });
   });
 

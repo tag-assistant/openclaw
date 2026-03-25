@@ -174,4 +174,45 @@ describe("runCopilotCliAgent", () => {
     expect(sdkArgs.model).toBeUndefined();
     expect(result.meta?.agentMeta?.model).toBe("default");
   });
+
+  it("passes infiniteSessions config enabled by default", async () => {
+    checkCopilotAvailableMock.mockReturnValue({ available: true });
+    runCopilotAgentMock.mockResolvedValueOnce({
+      text: "ok",
+      sessionId: "sid-inf",
+    });
+
+    await runCopilotCliAgent({
+      sessionId: "s1",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp",
+      prompt: "hi",
+      timeoutMs: 5_000,
+      runId: "run-7",
+    });
+
+    const sdkArgs = runCopilotAgentMock.mock.calls[0]?.[0];
+    expect(sdkArgs.infiniteSessions).toBeDefined();
+    expect(sdkArgs.infiniteSessions.enabled).toBe(true);
+  });
+
+  it("includes workspacePath in result meta when returned by SDK", async () => {
+    checkCopilotAvailableMock.mockReturnValue({ available: true });
+    runCopilotAgentMock.mockResolvedValueOnce({
+      text: "ok",
+      sessionId: "sid-ws",
+      workspacePath: "/tmp/copilot-workspace/session-ws",
+    });
+
+    const result = await runCopilotCliAgent({
+      sessionId: "s1",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp",
+      prompt: "hi",
+      timeoutMs: 5_000,
+      runId: "run-8",
+    });
+
+    expect(result.meta?.workspacePath).toBe("/tmp/copilot-workspace/session-ws");
+  });
 });
