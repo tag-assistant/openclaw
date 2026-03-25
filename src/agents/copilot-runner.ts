@@ -67,9 +67,17 @@ export async function runCopilotCliAgent(params: {
   const modelId = backendConfig ? normalizeCliModel(rawModelId, backendConfig.config) : rawModelId;
   const modelDisplay = `copilot-cli/${modelId}`;
 
+  // Resolve tool filters from backend config
+  const toolConfig = backendConfig?.config as Record<string, unknown> | undefined;
+  const availableTools = (toolConfig?.availableTools as string[] | undefined) ?? undefined;
+  const excludedTools = (toolConfig?.excludedTools as string[] | undefined) ?? undefined;
+  const hasToolFilters = !!(availableTools?.length || excludedTools?.length);
+
   const extraSystemPrompt = [
     params.extraSystemPrompt?.trim(),
-    "Tools are disabled in this session. Do not call tools.",
+    // Only append the blanket "tools disabled" message when no SDK-level tool
+    // filters are configured — in that case tools really are fully disabled.
+    ...(!hasToolFilters ? ["Tools are disabled in this session. Do not call tools."] : []),
   ]
     .filter(Boolean)
     .join("\n");
@@ -121,6 +129,8 @@ export async function runCopilotCliAgent(params: {
       systemPrompt,
       timeoutMs: params.timeoutMs,
       sessionId: params.cliSessionId,
+      availableTools,
+      excludedTools,
     });
 
     const text = result.text?.trim();

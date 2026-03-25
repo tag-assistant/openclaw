@@ -116,6 +116,10 @@ export type CopilotAgentRunOptions = {
   systemPrompt?: string;
   timeoutMs?: number;
   sessionId?: string;
+  /** SDK-level tool allowlist — only these tools are available (takes precedence over excludedTools). */
+  availableTools?: string[];
+  /** SDK-level tool blocklist — all tools except these are available. */
+  excludedTools?: string[];
 };
 
 export type CopilotAgentRunResult = {
@@ -139,17 +143,30 @@ export async function runCopilotAgent(
   try {
     await ensureAuthenticated(client);
 
+    const hasToolFilters = !!(options.availableTools?.length || options.excludedTools?.length);
+
     const sessionConfig: SessionConfig = {
       model: options.model,
       workingDirectory: options.workspaceDir,
       streaming: true,
-      // Deny tool-use permission requests by default (security: callers must
-      // opt-in to specific capabilities through session configuration).
-      onPermissionRequest: async () => ({
-        kind: "denied-interactively-by-user",
-        feedback: "Tool use is not permitted in this session.",
-      }),
+      ...(options.availableTools?.length && { availableTools: options.availableTools }),
+      ...(options.excludedTools?.length && { excludedTools: options.excludedTools }),
+      // When tool filters are configured, auto-approve permission requests since
+      // the SDK enforces the allowlist/blocklist. Otherwise deny all by default.
+      onPermissionRequest: hasToolFilters
+        ? async () => ({ kind: "approved" as const })
+        : async () => ({
+            kind: "denied-interactively-by-user" as const,
+            feedback: "Tool use is not permitted in this session.",
+          }),
     };
+
+    if (hasToolFilters) {
+      log.info("copilot session tool filters configured", {
+        availableTools: options.availableTools,
+        excludedTools: options.excludedTools,
+      });
+    }
 
     if (options.systemPrompt) {
       sessionConfig.systemMessage = {
