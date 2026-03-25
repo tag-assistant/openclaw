@@ -181,6 +181,63 @@ describe("copilot-sdk", () => {
       expect(mockClient.stop).toHaveBeenCalled();
     });
 
+    it("passes availableTools to session config and auto-approves permissions", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "tools!" },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "use tools",
+        availableTools: ["read", "write", "exec"],
+        timeoutMs: 5_000,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.availableTools).toEqual(["read", "write", "exec"]);
+      expect(sessionConfig.excludedTools).toBeUndefined();
+      // Permission handler should auto-approve when tool filters are set
+      const permResult = await sessionConfig.onPermissionRequest();
+      expect(permResult.kind).toBe("approved");
+    });
+
+    it("passes excludedTools to session config and auto-approves permissions", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "tools!" },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "use tools",
+        excludedTools: ["exec", "write"],
+        timeoutMs: 5_000,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.excludedTools).toEqual(["exec", "write"]);
+      expect(sessionConfig.availableTools).toBeUndefined();
+      const permResult = await sessionConfig.onPermissionRequest();
+      expect(permResult.kind).toBe("approved");
+    });
+
+    it("denies permissions when no tool filters are set", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "no tools" },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "hi",
+        timeoutMs: 5_000,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.availableTools).toBeUndefined();
+      expect(sessionConfig.excludedTools).toBeUndefined();
+      const permResult = await sessionConfig.onPermissionRequest();
+      expect(permResult.kind).toBe("denied-interactively-by-user");
+    });
+
     it("passes system prompt as append mode", async () => {
       mockSession.sendAndWait.mockResolvedValueOnce({
         data: { content: "Got it." },
