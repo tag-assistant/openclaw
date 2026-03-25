@@ -112,7 +112,10 @@ export async function runCopilotCliAgent(params: {
   });
 
   try {
-    log.info(`copilot-cli exec: model=${modelId} promptChars=${params.prompt.length}`);
+    const isResume = !!params.cliSessionId;
+    log.info(
+      `copilot-cli exec: model=${modelId} promptChars=${params.prompt.length} session=${isResume ? "resume:" + params.cliSessionId : "new"}`,
+    );
 
     const result = await runCopilotAgent({
       prompt: params.prompt,
