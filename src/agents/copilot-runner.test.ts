@@ -9,6 +9,13 @@ vi.mock("./copilot-sdk.js", () => ({
   runCopilotAgent: (...args: unknown[]) => runCopilotAgentMock(...args),
 }));
 
+// Mock bundle-mcp to control MCP server loading in tests
+const loadEnabledBundleMcpConfigMock = vi.fn();
+vi.mock("../plugins/bundle-mcp.js", () => ({
+  loadEnabledBundleMcpConfig: (...args: unknown[]) => loadEnabledBundleMcpConfigMock(...args),
+  extractMcpServerMap: vi.fn(),
+}));
+
 // Stub out bootstrap/docs resolution to avoid filesystem side effects
 vi.mock("./bootstrap-files.js", () => ({
   resolveBootstrapContextForRun: vi.fn(async () => ({ contextFiles: [] })),
@@ -25,6 +32,12 @@ describe("runCopilotCliAgent", () => {
   beforeEach(() => {
     checkCopilotAvailableMock.mockReset();
     runCopilotAgentMock.mockReset();
+    loadEnabledBundleMcpConfigMock.mockReset();
+    // Default: no MCP servers
+    loadEnabledBundleMcpConfigMock.mockReturnValue({
+      config: { mcpServers: {} },
+      diagnostics: [],
+    });
   });
 
   it("throws FailoverError when copilot is not available", async () => {
@@ -173,5 +186,79 @@ describe("runCopilotCliAgent", () => {
     // When model is "default", SDK receives undefined so it uses its own default
     expect(sdkArgs.model).toBeUndefined();
     expect(result.meta?.agentMeta?.model).toBe("default");
+  });
+
+  it("passes MCP servers to SDK when bundle-mcp config has servers", async () => {
+    checkCopilotAvailableMock.mockReturnValue({ available: true });
+    runCopilotAgentMock.mockResolvedValueOnce({
+      text: "MCP available",
+      sessionId: "sid-mcp",
+    });
+    loadEnabledBundleMcpConfigMock.mockReturnValue({
+      config: {
+        mcpServers: {
+          "my-server": {
+            command: "node",
+            args: ["server.js"],
+            env: { API_KEY: "secret" },
+            cwd: "/tmp/plugins/my-server",
+            tools: ["search", "read"],
+          },
+          "remote-server": {
+            type: "http",
+            url: "https://example.com/mcp",
+            headers: { Authorization: "Bearer abc" },
+            tools: ["query"],
+          },
+        },
+      },
+      diagnostics: [],
+    });
+
+    await runCopilotCliAgent({
+      sessionId: "s1",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp",
+      prompt: "use mcp",
+      timeoutMs: 5_000,
+      runId: "run-mcp",
+    });
+
+    const sdkArgs = runCopilotAgentMock.mock.calls[0]?.[0];
+    expect(sdkArgs.mcpServers).toBeDefined();
+    expect(Object.keys(sdkArgs.mcpServers)).toEqual(["my-server", "remote-server"]);
+    expect(sdkArgs.mcpServers["my-server"]).toEqual({
+      command: "node",
+      args: ["server.js"],
+      env: { API_KEY: "secret" },
+      cwd: "/tmp/plugins/my-server",
+      tools: ["search", "read"],
+    });
+    expect(sdkArgs.mcpServers["remote-server"]).toEqual({
+      type: "http",
+      url: "https://example.com/mcp",
+      headers: { Authorization: "Bearer abc" },
+      tools: ["query"],
+    });
+  });
+
+  it("does not pass mcpServers when no MCP servers are configured", async () => {
+    checkCopilotAvailableMock.mockReturnValue({ available: true });
+    runCopilotAgentMock.mockResolvedValueOnce({
+      text: "no mcp",
+      sessionId: "sid-nomcp",
+    });
+
+    await runCopilotCliAgent({
+      sessionId: "s1",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp",
+      prompt: "hi",
+      timeoutMs: 5_000,
+      runId: "run-nomcp",
+    });
+
+    const sdkArgs = runCopilotAgentMock.mock.calls[0]?.[0];
+    expect(sdkArgs.mcpServers).toBeUndefined();
   });
 });
