@@ -7,6 +7,17 @@ import type {
 } from "@github/copilot-sdk";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 
+/**
+ * SDK user-input types — defined locally until `@github/copilot-sdk` exports them.
+ * These mirror the SDK's internal `UserInputRequest`, `UserInputResponse`, and `UserInputHandler`.
+ */
+type UserInputRequest = { question: string; choices?: string[]; allowFreeform?: boolean };
+type UserInputResponse = { answer: string; wasFreeform: boolean };
+type UserInputHandler = (
+  request: UserInputRequest,
+  invocation: unknown,
+) => Promise<UserInputResponse>;
+
 const log = createSubsystemLogger("agents/copilot-sdk");
 
 /**
@@ -116,6 +127,11 @@ export type CopilotAgentRunOptions = {
   systemPrompt?: string;
   timeoutMs?: number;
   sessionId?: string;
+  onUserInput?: (request: {
+    question: string;
+    choices?: string[];
+    allowFreeform?: boolean;
+  }) => Promise<{ answer: string; wasFreeform: boolean }>;
 };
 
 export type CopilotAgentRunResult = {
@@ -150,6 +166,24 @@ export async function runCopilotAgent(
         feedback: "Tool use is not permitted in this session.",
       }),
     };
+
+    if (options.onUserInput) {
+      const userHandler = options.onUserInput;
+      const wrappedHandler: UserInputHandler = async (request: UserInputRequest, _invocation) => {
+        log.info("copilot agent requesting user input", {
+          questionLength: request.question.length,
+          choiceCount: request.choices?.length ?? 0,
+          allowFreeform: request.allowFreeform ?? false,
+        });
+        const result = await userHandler({
+          question: request.question,
+          choices: request.choices,
+          allowFreeform: request.allowFreeform,
+        });
+        return result as UserInputResponse;
+      };
+      sessionConfig.onUserInputRequest = wrappedHandler;
+    }
 
     if (options.systemPrompt) {
       sessionConfig.systemMessage = {
