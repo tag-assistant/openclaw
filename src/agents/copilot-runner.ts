@@ -6,6 +6,7 @@ import { resolveSessionAgentIds } from "./agent-scope.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-files.js";
 import { resolveCliBackendConfig } from "./cli-backends.js";
 import { buildSystemPrompt, normalizeCliModel } from "./cli-runner/helpers.js";
+import { mapThinkLevelToReasoningEffort } from "./copilot-reasoning.js";
 import { checkCopilotAvailable, runCopilotAgent } from "./copilot-sdk.js";
 import { resolveOpenClawDocsPath } from "./docs-path.js";
 import { FailoverError, resolveFailoverStatus } from "./failover-error.js";
@@ -121,6 +122,7 @@ export async function runCopilotCliAgent(params: {
       systemPrompt,
       timeoutMs: params.timeoutMs,
       sessionId: params.cliSessionId,
+      reasoningEffort: mapThinkLevelToReasoningEffort(params.thinkLevel),
     });
 
     const text = result.text?.trim();
