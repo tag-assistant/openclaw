@@ -7,6 +7,7 @@ import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-fi
 import { resolveCliBackendConfig } from "./cli-backends.js";
 import { buildSystemPrompt, normalizeCliModel } from "./cli-runner/helpers.js";
 import { checkCopilotAvailable, runCopilotAgent } from "./copilot-sdk.js";
+import { buildCopilotSessionHooks } from "./copilot-session-hooks.js";
 import { resolveOpenClawDocsPath } from "./docs-path.js";
 import { FailoverError, resolveFailoverStatus } from "./failover-error.js";
 import { classifyFailoverReason, isFailoverErrorMessage } from "./pi-embedded-helpers.js";
@@ -114,6 +115,8 @@ export async function runCopilotCliAgent(params: {
   try {
     log.info(`copilot-cli exec: model=${modelId} promptChars=${params.prompt.length}`);
 
+    const hooks = buildCopilotSessionHooks();
+
     const result = await runCopilotAgent({
       prompt: params.prompt,
       model: modelId === "default" ? undefined : modelId,
@@ -121,6 +124,7 @@ export async function runCopilotCliAgent(params: {
       systemPrompt,
       timeoutMs: params.timeoutMs,
       sessionId: params.cliSessionId,
+      hooks,
     });
 
     const text = result.text?.trim();

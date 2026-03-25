@@ -5,6 +5,9 @@ import type {
   ModelInfo,
   SessionConfig,
 } from "@github/copilot-sdk";
+
+/** Derive SessionHooks from SessionConfig since it's not directly exported. */
+export type SessionHooks = NonNullable<SessionConfig["hooks"]>;
 import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("agents/copilot-sdk");
@@ -116,6 +119,7 @@ export type CopilotAgentRunOptions = {
   systemPrompt?: string;
   timeoutMs?: number;
   sessionId?: string;
+  hooks?: SessionHooks;
 };
 
 export type CopilotAgentRunResult = {
@@ -143,6 +147,7 @@ export async function runCopilotAgent(
       model: options.model,
       workingDirectory: options.workspaceDir,
       streaming: true,
+      hooks: options.hooks,
       // Deny tool-use permission requests by default (security: callers must
       // opt-in to specific capabilities through session configuration).
       onPermissionRequest: async () => ({
