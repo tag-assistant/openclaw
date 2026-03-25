@@ -2,12 +2,16 @@ import { resolveHeartbeatPrompt } from "../auto-reply/heartbeat.js";
 import type { ThinkLevel } from "../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { loadEnabledBundleMcpConfig, type BundleMcpServerConfig } from "../plugins/bundle-mcp.js";
 import { resolveSessionAgentIds } from "./agent-scope.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-files.js";
 import { resolveCliBackendConfig } from "./cli-backends.js";
 import { buildSystemPrompt, normalizeCliModel } from "./cli-runner/helpers.js";
-import { checkCopilotAvailable, runCopilotAgent } from "./copilot-sdk.js";
+import { createCopilotEventLogger, extractUsageFromEvents } from "./copilot-event-mapper.js";
+import { mapThinkLevelToReasoningEffort } from "./copilot-reasoning.js";
+import { checkCopilotAvailable, runCopilotAgent, type CopilotMcpServerConfig } from "./copilot-sdk.js";
 import { buildCopilotSessionHooks } from "./copilot-session-hooks.js";
+import { createTimeoutUserInputHandler } from "./copilot-user-input.js";
 import { resolveOpenClawDocsPath } from "./docs-path.js";
 import { FailoverError, resolveFailoverStatus } from "./failover-error.js";
 import { classifyFailoverReason, isFailoverErrorMessage } from "./pi-embedded-helpers.js";
@@ -68,9 +72,17 @@ export async function runCopilotCliAgent(params: {
   const modelId = backendConfig ? normalizeCliModel(rawModelId, backendConfig.config) : rawModelId;
   const modelDisplay = `copilot-cli/${modelId}`;
 
+  // Resolve tool filters from backend config
+  const toolConfig = backendConfig?.config as Record<string, unknown> | undefined;
+  const availableTools = (toolConfig?.availableTools as string[] | undefined) ?? undefined;
+  const excludedTools = (toolConfig?.excludedTools as string[] | undefined) ?? undefined;
+  const hasToolFilters = !!(availableTools?.length || excludedTools?.length);
+
   const extraSystemPrompt = [
     params.extraSystemPrompt?.trim(),
-    "Tools are disabled in this session. Do not call tools.",
+    // Only append the blanket "tools disabled" message when no SDK-level tool
+    // filters are configured — in that case tools really are fully disabled.
+    ...(!hasToolFilters ? ["Tools are disabled in this session. Do not call tools."] : []),
   ]
     .filter(Boolean)
     .join("\n");
@@ -112,10 +124,51 @@ export async function runCopilotCliAgent(params: {
     agentId: sessionAgentId,
   });
 
+  // Enable infinite sessions by default for copilot-cli runs (they can be long-running).
+  // Thresholds are configurable via cli backend config overrides.
+  const infiniteSessionsConfig = backendConfig?.config as Record<string, unknown> | undefined;
+  const infiniteSessions = {
+    enabled: true,
+    ...(typeof infiniteSessionsConfig?.backgroundCompactionThreshold === "number"
+      ? { backgroundCompactionThreshold: infiniteSessionsConfig.backgroundCompactionThreshold }
+      : {}),
+    ...(typeof infiniteSessionsConfig?.bufferExhaustionThreshold === "number"
+      ? { bufferExhaustionThreshold: infiniteSessionsConfig.bufferExhaustionThreshold }
+      : {}),
+  };
+
+  // Load MCP server configs from OpenClaw's bundle-mcp infrastructure
+  const mcpServers = loadMcpServersForSdk({
+    workspaceDir: resolvedWorkspace,
+    config: params.config,
+  });
+
+  // Placeholder user input handler — auto-responds with a default message.
+  // The real handler will be wired to OpenClaw's messaging layer in a future PR.
+  // Having it enabled means the SDK exposes `ask_user` to the agent.
+  const onUserInput = createTimeoutUserInputHandler({
+    handler: async () => ({
+      answer: "User interaction not available in this session",
+      wasFreeform: true,
+    }),
+    timeoutMs: 5_000,
+  });
+
   try {
-    log.info(`copilot-cli exec: model=${modelId} promptChars=${params.prompt.length}`);
+    const isResume = !!params.cliSessionId;
+    log.info(
+      `copilot-cli exec: model=${modelId} promptChars=${params.prompt.length} session=${isResume ? "resume:" + params.cliSessionId : "new"}`,
+    );
 
     const hooks = buildCopilotSessionHooks();
+
+    // Collect events for usage extraction
+    const collectedEvents: import("@github/copilot-sdk").SessionEvent[] = [];
+    const eventLogger = createCopilotEventLogger((msg, data) => log.info(msg, data));
+    const onEvent = (event: import("@github/copilot-sdk").SessionEvent) => {
+      collectedEvents.push(event);
+      eventLogger(event);
+    };
 
     const result = await runCopilotAgent({
       prompt: params.prompt,
@@ -125,10 +178,21 @@ export async function runCopilotCliAgent(params: {
       timeoutMs: params.timeoutMs,
       sessionId: params.cliSessionId,
       hooks,
+      infiniteSessions,
+      // When resuming an existing session, use modelOverride to dynamically
+      // switch the model via setModel() instead of requiring a new session.
+      modelOverride: params.cliSessionId && modelId !== "default" ? modelId : undefined,
+      availableTools,
+      excludedTools,
+      mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      onEvent,
+      onUserInput,
+      reasoningEffort: mapThinkLevelToReasoningEffort(params.thinkLevel),
     });
 
     const text = result.text?.trim();
     const payloads = text ? [{ text }] : undefined;
+    const usage = extractUsageFromEvents(collectedEvents);
 
     return {
       payloads,
@@ -137,7 +201,17 @@ export async function runCopilotCliAgent(params: {
         agentMeta: {
           sessionId: result.sessionId ?? params.sessionId ?? "",
           provider: "copilot-cli",
-          model: modelId,
+          model: result.model ?? modelId,
+          workspacePath: result.workspacePath,
+          ...(usage
+            ? {
+                usage: {
+                  input: usage.promptTokens,
+                  output: usage.completionTokens,
+                  total: usage.totalTokens,
+                },
+              }
+            : {}),
         },
       },
     };
@@ -158,4 +232,64 @@ export async function runCopilotCliAgent(params: {
     }
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// MCP server loading helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Load MCP servers from OpenClaw's bundle-mcp config and convert to SDK format.
+ */
+function loadMcpServersForSdk(options: {
+  workspaceDir: string;
+  config?: OpenClawConfig;
+}): Record<string, CopilotMcpServerConfig> {
+  try {
+    const bundleConfig = loadEnabledBundleMcpConfig(options.config);
+    if (!bundleConfig?.mcpServers) {
+      return {};
+    }
+    const result: Record<string, CopilotMcpServerConfig> = {};
+    for (const [name, server] of Object.entries(bundleConfig.mcpServers)) {
+      if (server) {
+        result[name] = convertBundleMcpServer(server);
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Convert OpenClaw's BundleMcpServerConfig to Copilot SDK's MCPServerConfig format.
+ */
+function convertBundleMcpServer(server: BundleMcpServerConfig): CopilotMcpServerConfig {
+  const type = typeof server.type === "string" ? server.type : undefined;
+  const isRemote = type === "http" || type === "sse";
+
+  if (isRemote) {
+    return {
+      type: type,
+      url: typeof server.url === "string" ? server.url : "",
+      headers:
+        server.headers && typeof server.headers === "object"
+          ? (server.headers as Record<string, string>)
+          : undefined,
+      tools: Array.isArray(server.tools) ? (server.tools as string[]) : [],
+    };
+  }
+
+  return {
+    type: (type as "local" | "stdio") ?? "local",
+    command: typeof server.command === "string" ? server.command : "",
+    args: Array.isArray(server.args) ? (server.args as string[]) : [],
+    env:
+      server.env && typeof server.env === "object"
+        ? (server.env as Record<string, string>)
+        : undefined,
+    cwd: typeof server.cwd === "string" ? server.cwd : undefined,
+    tools: Array.isArray(server.tools) ? (server.tools as string[]) : [],
+  };
 }

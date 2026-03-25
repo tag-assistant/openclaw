@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // Mock CopilotClient and CopilotSession for runCopilotAgent tests
 const mockSession = {
   sendAndWait: vi.fn(),
-  destroy: vi.fn(),
+  disconnect: vi.fn(), destroy: vi.fn(),
   sessionId: "mock-session-id",
 };
 const mockClient = {
@@ -30,7 +30,7 @@ vi.mock("@github/copilot-sdk", () => {
 describe("copilot-sdk", () => {
   afterEach(() => {
     mockSession.sendAndWait.mockReset();
-    mockSession.destroy.mockReset().mockResolvedValue(undefined);
+    mockSession.disconnect.mockReset().mockResolvedValue(undefined); mockSession.destroy.mockReset().mockResolvedValue(undefined);
     mockClient.stop.mockReset().mockResolvedValue(undefined);
     mockClient.createSession.mockReset().mockResolvedValue(mockSession);
     mockClient.resumeSession.mockReset().mockResolvedValue(mockSession);
@@ -132,7 +132,7 @@ describe("copilot-sdk", () => {
       expect(mockClient.createSession).toHaveBeenCalledTimes(1);
       expect(mockClient.resumeSession).not.toHaveBeenCalled();
       expect(mockSession.sendAndWait).toHaveBeenCalledWith({ prompt: "Say hello" }, 5_000);
-      expect(mockSession.destroy).toHaveBeenCalled();
+      expect(mockSession.disconnect).toHaveBeenCalled();
       expect(mockClient.stop).toHaveBeenCalled();
     });
 
@@ -177,7 +177,7 @@ describe("copilot-sdk", () => {
       );
 
       // Cleanup should still happen
-      expect(mockSession.destroy).toHaveBeenCalled();
+      expect(mockSession.disconnect).toHaveBeenCalled();
       expect(mockClient.stop).toHaveBeenCalled();
     });
 

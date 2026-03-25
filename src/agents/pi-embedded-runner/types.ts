@@ -28,6 +28,8 @@ export type EmbeddedPiAgentMeta = {
     cacheWrite?: number;
     total?: number;
   };
+  /** Workspace path for Copilot SDK infinite session persistence. */
+  workspacePath?: string;
 };
 
 export type EmbeddedPiRunMeta = {
