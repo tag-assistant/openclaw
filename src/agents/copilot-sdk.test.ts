@@ -199,6 +199,67 @@ describe("copilot-sdk", () => {
         content: "You are a helpful assistant.",
       });
     });
+
+    it("passes mcpServers to session config when provided", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "MCP ready." },
+      });
+
+      const mcpServers = {
+        "my-server": {
+          command: "node",
+          args: ["server.js"],
+          env: { FOO: "bar" },
+          tools: ["tool1", "tool2"],
+        },
+        "remote-server": {
+          type: "http" as const,
+          url: "https://example.com/mcp",
+          tools: ["tool3"],
+        },
+      };
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "use tools",
+        mcpServers,
+        timeoutMs: 5_000,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.mcpServers).toEqual(mcpServers);
+    });
+
+    it("does not set mcpServers when empty", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "No MCP." },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "hi",
+        mcpServers: {},
+        timeoutMs: 5_000,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.mcpServers).toBeUndefined();
+    });
+
+    it("does not set mcpServers when undefined", async () => {
+      mockSession.sendAndWait.mockResolvedValueOnce({
+        data: { content: "No MCP." },
+      });
+
+      const { runCopilotAgent } = await import("./copilot-sdk.js");
+      await runCopilotAgent({
+        prompt: "hi",
+        timeoutMs: 5_000,
+      });
+
+      const sessionConfig = mockClient.createSession.mock.calls[0]?.[0];
+      expect(sessionConfig.mcpServers).toBeUndefined();
+    });
   });
 
   describe("listCopilotModels", () => {

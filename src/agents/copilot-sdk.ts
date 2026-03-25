@@ -2,6 +2,7 @@ import type {
   CopilotClient,
   CopilotClientOptions,
   CopilotSession,
+  MCPServerConfig,
   ModelInfo,
   SessionConfig,
 } from "@github/copilot-sdk";
@@ -109,6 +110,8 @@ export async function listCopilotModels(options?: { cwd?: string }): Promise<Mod
   }
 }
 
+export type { MCPServerConfig as CopilotMcpServerConfig };
+
 export type CopilotAgentRunOptions = {
   prompt: string;
   model?: string;
@@ -116,6 +119,7 @@ export type CopilotAgentRunOptions = {
   systemPrompt?: string;
   timeoutMs?: number;
   sessionId?: string;
+  mcpServers?: Record<string, MCPServerConfig>;
 };
 
 export type CopilotAgentRunResult = {
@@ -156,6 +160,14 @@ export async function runCopilotAgent(
         mode: "append",
         content: options.systemPrompt,
       };
+    }
+
+    if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
+      sessionConfig.mcpServers = options.mcpServers;
+      log.info("configured MCP servers for session", {
+        count: Object.keys(options.mcpServers).length,
+        servers: Object.keys(options.mcpServers),
+      });
     }
 
     if (options.sessionId) {
